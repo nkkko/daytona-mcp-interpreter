@@ -1,0 +1,19 @@
+[project]
+name = "daytona-mcp-interpreter"
+version = "0.1.0"
+description = "A Daytona MCP server for Python code interpretation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "pydantic>=2.10.2",
+    "python-dotenv>=1.0.1",
+    "httpx>=0.24.0",
+]
+
+[project.scripts]
+daytona-interpreter = "daytona_mcp_interpreter.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
