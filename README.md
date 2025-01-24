@@ -11,9 +11,11 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 2. Create and activate virtual environment:
 ```bash
+rm -rf .venv 
 uv venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate 
 ```
+On Windows: .venv\Scripts\activate
 
 3. Install dependencies:
 ```bash
@@ -36,6 +38,11 @@ npx @modelcontextprotocol/inspector \
   src/daytona_mcp_interpreter/server.py
 ```
 
+Tail log:
+```
+tail -f /tmp/daytona-interpreter.log
+```
+
 ## Usage with Claude Desktop
 
 1. Configure in Claude Desktop config file:
@@ -45,17 +52,17 @@ On MacOS (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 {
     "mcpServers": {
         "daytona-interpreter": {
-            "command": "/Users/YOURUSERNAME/.local/bin/uv",
+            "command": "/Users/USER/.local/bin/uv",
             "args": [
                 "--directory",
-                "/Users/YOURUSERNAME/dev/daytona-mcp-interpreter",
+                "/Users/USER/dev/daytona-mcp-interpreter",
                 "run",
                 "src/daytona_mcp_interpreter/server.py"
             ],
             "env": {
                 "PYTHONUNBUFFERED": "1",
-                "MCP_DAYTONA_API_KEY": "",
-                "MCP_DAYTONA_API_URL": "",
+                "MCP_DAYTONA_API_KEY": "api_key",
+                "MCP_DAYTONA_API_URL": "api_server_url",
                 "MCP_DAYTONA_TIMEOUT": "30.0",
                 "MCP_VERIFY_SSL": "false",
                 "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
