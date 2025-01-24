@@ -33,7 +33,7 @@ class Config:
             raise ValueError("MCP_DAYTONA_API_KEY environment variable is required")
             
         self.api_url = os.getenv('MCP_DAYTONA_API_URL', 'http://localhost:3986')
-        self.timeout = float(os.getenv('MCP_DAYTONA_TIMEOUT', '30.0'))
+        self.timeout = float(os.getenv('MCP_DAYTONA_TIMEOUT', '10.0'))
         self.verify_ssl = os.getenv('MCP_VERIFY_SSL', 'false').lower() == 'true'
 
 def setup_logging() -> logging.Logger:
@@ -107,9 +107,6 @@ class DaytonaInterpreter:
             "cancelled": handle_cancelled  # Added handler for 'cancelled' method
         })
 
-        # Note: If the MCP framework supports wildcards or a catch-all handler, implement it here
-        # Otherwise, ensure all expected notification methods are handled above
-
     def setup_handlers(self):
         """Set up server request handlers"""
         self.setup_notification_handlers() 
@@ -175,6 +172,8 @@ class DaytonaInterpreter:
     async def create_workspace(self) -> str:
         """Create a new Daytona workspace and return its ID"""
         workspace_name = f"python-{os.urandom(4).hex()}"
+        self.logger.info(f"Creating Workspace with name: {workspace_name}")
+
         create_data = {
             "name": workspace_name,
             "id": workspace_name,
@@ -203,19 +202,6 @@ class DaytonaInterpreter:
             response.raise_for_status()
             workspace_id = response.json()["id"]
 
-            await asyncio.sleep(2)  # Keep the original delay
-
-            test_response = await self.http_client.post(
-                f"/workspace/{workspace_id}/python/toolbox/process/execute",
-                json={
-                    "command": "python3",
-                    "args": ["-c", "print('test')"],
-                    "timeout": 5
-                }
-            )
-            test_response.raise_for_status()
-            self.logger.debug(f"Test execution response: {test_response.json()}")
-
             return workspace_id
         except Exception as e:
             self.logger.error(f"Failed to create workspace: {str(e)}")
@@ -233,7 +219,10 @@ class DaytonaInterpreter:
             )
             response.raise_for_status()
             result = response.json()
-            
+
+            stdout_result = result.get("result", "").strip()
+            self.logger.info(f"Execution stdout: {stdout_result}")
+
             return json.dumps({
                 "stdout": result.get("result", "").strip(),
                 "stderr": result.get("error", "").strip(),
@@ -304,7 +293,7 @@ async def main():
         await interpreter.run()
     except KeyboardInterrupt:
         logger.info("Received interrupt")
-    except BaseException as e:  # Changed exception type to catch all, including BaseExceptionGroup
+    except BaseException as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
         sys.exit(1)
     finally:
