@@ -57,14 +57,14 @@ def setup_logging() -> logging.Logger:
     return logger
 
 class DaytonaInterpreter:
-    """MCP Server for interpreting Python code in Daytona workspaces"""
+    """MCP Server for interpreting Python code and executing shell commands in Daytona workspaces"""
 
     def __init__(self, logger: logging.Logger):
         self.logger = logger
         self.config = Config()
         self.server = Server("daytona-interpreter")
         self.workspace_id: Optional[str] = None
-        self.project_id: Optional[str] = None  # Specify project ID
+        self.project_id: Optional[str] = None
         self.http_client: Optional[httpx.AsyncClient] = None
         
         self.setup_handlers()
@@ -104,40 +104,64 @@ class DaytonaInterpreter:
             "cancelled": handle_cancelled  # Added handler for 'cancelled' method
         })
 
+
     def setup_handlers(self):
         """Set up server request handlers"""
         self.setup_notification_handlers() 
 
         @self.server.list_tools()
         async def list_tools() -> List[Tool]:
-            return [Tool(
-                name="python_interpreter",
-                description="Execute Python code in a Daytona workspace",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "code": {"type": "string", "description": "Python code to execute"}
-                    },
-                    "required": ["code"]
-                }
-            )]
+            return [
+                Tool(
+                    name="python_interpreter",
+                    description="Execute Python code in a Daytona workspace",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "code": {"type": "string", "description": "Python code to execute"}
+                        },
+                        "required": ["code"]
+                    }
+                ),
+                Tool(
+                    name="command_executor",
+                    description="Execute a single-line shell command in a Daytona workspace",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "command": {"type": "string", "description": "Shell command to execute"}
+                        },
+                        "required": ["command"]
+                    }
+                )
+            ]
 
         @self.server.call_tool() 
         async def call_tool(name: str, arguments: dict) -> List[TextContent | ImageContent | EmbeddedResource]:
-            if name != "python_interpreter":
+            if name == "python_interpreter":
+                code = arguments.get("code")
+                if not code:
+                    raise ValueError("Code argument is required")
+                try:
+                    result = await self.execute_python_code(code)
+                    return [TextContent(type="text", text=result)]
+                except Exception as e:
+                    self.logger.error(f"Error executing tool '{name}': {e}", exc_info=True)
+                    return [TextContent(type="text", text=f"Error executing tool: {e}")]
+            
+            elif name == "command_executor":
+                command = arguments.get("command")
+                if not command:
+                    raise ValueError("Command argument is required")
+                try:
+                    result = await self.execute_command(command)
+                    return [TextContent(type="text", text=result)]
+                except Exception as e:
+                    self.logger.error(f"Error executing tool '{name}': {e}", exc_info=True)
+                    return [TextContent(type="text", text=f"Error executing tool: {e}")]
+            
+            else:
                 raise ValueError(f"Unknown tool: {name}")
-
-            code = arguments.get("code")
-            if not code:
-                raise ValueError("Code argument is required")
-
-            try:
-                result = await self.execute_python_code(code)
-                return [TextContent(type="text", text=result)]
-            except Exception as e:
-                self.logger.error(f"Error executing tool '{name}': {e}", exc_info=True)
-                return [TextContent(type="text", text=f"Error executing tool: {e}")]
-            # Removed cleanup_workspace from here
 
     async def initialize_client(self) -> None:
         """Initialize HTTP client"""
@@ -405,6 +429,51 @@ class DaytonaInterpreter:
                     self.logger.debug(f"Deleted local temporary file: {temp_file_path}")
             except Exception as e:
                 self.logger.error(f"Failed to delete local temporary file: {temp_file_path}, Error: {e}")
+
+    async def execute_command(self, command: str) -> str:
+        """Execute a single-line shell command in the Daytona workspace."""
+        if not self.workspace_id or not self.project_id:
+            raise RuntimeError("Workspace ID or Project ID is not set.")
+
+        execute_url = f"/workspace/{self.workspace_id}/{self.project_id}/toolbox/process/execute"
+        execute_payload = {
+            "command": command,
+            "timeout": int(self.config.timeout)
+        }
+
+        self.logger.debug(f"Executing shell command: {command}")
+
+        try:
+            response = await self.http_client.post(
+                execute_url,
+                json=execute_payload
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            # Parse the execution result
+            stdout = result.get("result", "").strip()
+            stderr = result.get("error", "").strip()
+            exit_code = result.get("code", 0)
+
+            self.logger.info(f"Command execution completed with exit code {exit_code}")
+            if stdout:
+                self.logger.info(f"stdout: {stdout}")
+            if stderr:
+                self.logger.warning(f"stderr: {stderr}")
+
+            # Return the execution output as JSON
+            return json.dumps({
+                "stdout": stdout,
+                "stderr": stderr,
+                "exit_code": exit_code
+            }, indent=2)
+        except httpx.HTTPStatusError as e:
+            self.logger.error(f"HTTP error during command execution: {e.response.text}")
+            raise RuntimeError(f"HTTP error during command execution: {e.response.text}")
+        except Exception as e:
+            self.logger.error(f"Error during command execution: {e}")
+            raise RuntimeError(f"Error during command execution: {e}")
 
     async def cleanup_workspace(self) -> None:
         """Clean up workspace"""
