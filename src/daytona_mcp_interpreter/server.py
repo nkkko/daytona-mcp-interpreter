@@ -1,9 +1,4 @@
 
-"""
-MCP server for interpreting Python code in Daytona workspaces.
-Handles workspace lifecycle and code execution.
-"""
-
 import asyncio
 import json
 import logging
@@ -12,6 +7,7 @@ import os
 from typing import List, Optional, Any
 from pathlib import Path
 import sys
+import uuid
 
 import httpx
 from dotenv import load_dotenv
@@ -33,7 +29,7 @@ class Config:
             raise ValueError("MCP_DAYTONA_API_KEY environment variable is required")
             
         self.api_url = os.getenv('MCP_DAYTONA_API_URL', 'http://localhost:3986')
-        self.timeout = float(os.getenv('MCP_DAYTONA_TIMEOUT', '10.0'))
+        self.timeout = float(os.getenv('MCP_DAYTONA_TIMEOUT', '30.0'))  # Increased timeout
         self.verify_ssl = os.getenv('MCP_VERIFY_SSL', 'false').lower() == 'true'
 
 def setup_logging() -> logging.Logger:
@@ -68,6 +64,7 @@ class DaytonaInterpreter:
         self.config = Config()
         self.server = Server("daytona-interpreter")
         self.workspace_id: Optional[str] = None
+        self.project_id: Optional[str] = None  # Specify project ID
         self.http_client: Optional[httpx.AsyncClient] = None
         
         self.setup_handlers()
@@ -152,8 +149,8 @@ class DaytonaInterpreter:
         self.http_client = httpx.AsyncClient(
             base_url=base_url,
             headers={
-                "Authorization": f"Bearer {self.config.api_key}",
-                "Content-Type": "application/json"
+                "Authorization": f"Bearer {self.config.api_key}"
+                # Removed "Content-Type": "application/json"
             },
             timeout=self.config.timeout,
             verify=self.config.verify_ssl,
@@ -169,16 +166,21 @@ class DaytonaInterpreter:
             self.logger.error(f"Failed to connect to MCP API: {e}", exc_info=True)
             raise
 
-    async def create_workspace(self) -> str:
-        """Create a new Daytona workspace and return its ID"""
-        workspace_name = f"python-{os.urandom(4).hex()}"
+    async def create_workspace_and_project(self) -> None:
+        """
+        Create a new Daytona workspace and project.
+        Update self.workspace_id and self.project_id accordingly.
+        """
+        workspace_name = f"python-{uuid.uuid4().hex[:8]}"
+        project_name = f"python-project-{uuid.uuid4().hex[:8]}"
         self.logger.info(f"Creating Workspace with name: {workspace_name}")
+        self.logger.info(f"Creating Project with name: {project_name}")
 
-        create_data = {
-            "name": workspace_name,
+        create_workspace_data = {
             "id": workspace_name,
+            "name": workspace_name,
             "projects": [{
-                "name": "python",
+                "name": project_name,
                 "envVars": {"PYTHONUNBUFFERED": "1"},
                 "image": "python:3.10-slim",
                 "user": "root",
@@ -189,7 +191,7 @@ class DaytonaInterpreter:
                         "id": "placeholder",
                         "name": "placeholder", 
                         "owner": "placeholder",
-                        "sha": "0" * 40,
+                        "sha": "0000000000000000000000000000000000000000",
                         "source": "local"
                     }
                 }
@@ -198,42 +200,211 @@ class DaytonaInterpreter:
         }
 
         try:
-            response = await self.http_client.post("/workspace", json=create_data)
+            response = await self.http_client.post("/workspace", json=create_workspace_data)
             response.raise_for_status()
-            workspace_id = response.json()["id"]
+            workspace = response.json()
+            
+            # Log the entire workspace response
+            # self.logger.debug(f"Workspace creation response: {json.dumps(workspace, indent=2)}")
+            
+            self.workspace_id = workspace.get("id")
+            projects = workspace.get("projects", [])
 
-            return workspace_id
+            if projects:
+                project_info = projects[0]
+                # self.logger.debug(f"First project details: {json.dumps(project_info, indent=2)}")
+                # Use 'id' if available and not a placeholder; otherwise, use 'name'
+                if 'id' in project_info and project_info['id'] and project_info['id'] != "placeholder":
+                    self.project_id = project_info['id']
+                else:
+                    self.project_id = project_info.get("name")
+                    # self.logger.warning(f"'id' not found or is a placeholder for project '{project_name}'. Using 'name' as 'project_id'.")
+            else:
+                self.logger.error("No projects found in workspace creation response.")
+                self.project_id = None
+
+            if not self.project_id:
+                # Attempt to fetch project details separately
+                self.project_id = await self.fetch_project_details(self.workspace_id, project_name)
+            
+            self.logger.info(f"Created Workspace ID: {self.workspace_id}, Project ID: {self.project_id}")
         except Exception as e:
-            self.logger.error(f"Failed to create workspace: {str(e)}")
-            raise RuntimeError(f"Failed to create workspace: {str(e)}")
+            self.logger.error(f"Failed to create workspace and project: {str(e)}")
+            raise RuntimeError(f"Failed to create workspace and project: {str(e)}")
 
-    async def execute_python_code(self, code: str) -> str:
-        """Execute code in workspace"""
+    async def fetch_project_details(self, workspace_id: str, project_name: str) -> Optional[str]:
+        """
+        Fetch the project details to retrieve the project ID using project name.
+        """
+        fetch_url = f"/workspace/{workspace_id}"
+        self.logger.info(f"Fetching workspace details from {fetch_url}")
+
+        try:
+            response = await self.http_client.get(fetch_url)
+            response.raise_for_status()
+            workspace = response.json()
+            projects = workspace.get("projects", [])
+            
+            for project in projects:
+                if project.get("name") == project_name:
+                    project_id = project.get("id") or project.get("name")
+                    self.logger.info(f"Found Project ID for project '{project_name}': {project_id}")
+                    return project_id
+            
+            self.logger.error(f"Project '{project_name}' not found in workspace '{workspace_id}'.")
+            return None
+        except Exception as e:
+            self.logger.error(f"Failed to fetch project details: {str(e)}")
+            return None
+
+    async def create_directory(self, directory_path: str) -> None:
+        """
+        Create a directory inside the workspace project.
+        """
+        create_dir_url = f"/workspace/{self.workspace_id}/{self.project_id}/toolbox/files/folder"
+        self.logger.info(f"Creating directory at {directory_path}")
+
+        # Ensure directory_path does not start with a leading slash
+        if directory_path.startswith('/'):
+            directory_path = directory_path[1:]
+
+        # Construct relative path within the project
+        relative_path = f"{directory_path}"  # No leading slash
+
+        params = {
+            "path": relative_path,  # Pass as relative path
+            "mode": 755             # Mode as integer
+        }
+
         try:
             response = await self.http_client.post(
-                f"/workspace/{self.workspace_id}/python/toolbox/process/execute",
-                json={
-                    "command": f"python3 -c '{code}'",
-                    "timeout": int(self.config.timeout)
+                create_dir_url,
+                params=params,  # Pass 'path' and 'mode' as query parameters
+                data=''         # Empty body
+            )
+            response.raise_for_status()
+            self.logger.info(f"Successfully created directory: {directory_path}")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 409:  # Directory already exists
+                self.logger.info(f"Directory already exists: {directory_path}")
+            else:
+                # Log the response text for better understanding of the error
+                self.logger.error(f"Failed to create directory {directory_path}: {e.response.text}")
+                raise RuntimeError(f"Failed to create directory {directory_path}: {e.response.text}")
+        except Exception as e:
+            self.logger.error(f"Unexpected error while creating directory {directory_path}: {e}")
+            raise RuntimeError(f"Unexpected error while creating directory {directory_path}: {e}")
+
+    async def upload_file(self, file_path: Path, upload_path: str) -> None:
+        """
+        Upload a file to the workspace project.
+        """
+        upload_url = f"/workspace/{self.workspace_id}/{self.project_id}/toolbox/files/upload"
+        self.logger.info(f"Uploading file {file_path} to {upload_path}")
+
+        try:
+            with open(file_path, 'rb') as f:
+                files = {
+                    'file': (file_path.name, f, 'application/octet-stream')  # MIME type can be adjusted if needed
                 }
+                params = {'path': upload_path}  # Pass 'path' as query parameter
+
+                response = await self.http_client.post(
+                    upload_url,
+                    params=params,  # Correct usage: query parameters
+                    files=files      # Let httpx set 'Content-Type: multipart/form-data'
+                )
+                response.raise_for_status()
+                self.logger.info(f"Successfully uploaded {file_path.name} to {upload_path}")
+        except httpx.HTTPStatusError as e:
+            # Log the response text to understand the 400 error
+            self.logger.error(f"Failed to upload file {file_path.name}: {e.response.text}")
+            raise RuntimeError(f"Failed to upload file {file_path.name}: {e.response.text}")
+        except Exception as e:
+            self.logger.error(f"Failed to upload file {file_path.name}: {str(e)}")
+            raise RuntimeError(f"Failed to upload file {file_path.name}: {str(e)}")
+
+    async def execute_python_code(self, code: str) -> str:
+        """Execute Python code by uploading it as a file and running it."""
+        if not self.workspace_id or not self.project_id:
+            raise RuntimeError("Workspace ID or Project ID is not set.")
+
+        # Step 1: Create a temporary Python file
+        unique_filename = f"temp_script_{uuid.uuid4().hex[:8]}.py"
+        temp_dir = Path("/tmp/daytona_scripts")
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_file_path = temp_dir / unique_filename
+
+        self.logger.debug(f"Creating temporary Python file at {temp_file_path}")
+
+        try:
+            with open(temp_file_path, 'w', encoding='utf-8') as f:
+                f.write(code)
+            self.logger.info(f"Temporary Python file created: {temp_file_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to create temporary Python file: {e}")
+            raise RuntimeError(f"Failed to create temporary Python file: {e}")
+
+        # Step 2: Create necessary directories (e.g., 'scripts/')
+        scripts_dir = "scripts"
+        await self.create_directory(scripts_dir)  # Now creates 'scripts' relative to project root
+
+        # Step 3: Upload the Python file to the workspace project
+        upload_path = f"{scripts_dir}/{unique_filename}"  # Relative path without leading '/'
+        await self.upload_file(temp_file_path, upload_path)
+
+        # Step 4: Execute the Python script
+        execute_url = f"/workspace/{self.workspace_id}/{self.project_id}/toolbox/process/execute"
+        command = f"python3 {upload_path}"  # Use the correct relative path
+
+        execute_payload = {
+            "command": command,
+            "timeout": int(self.config.timeout)
+        }
+
+        self.logger.debug(f"Executing command: {command}")
+
+        try:
+            response = await self.http_client.post(
+                execute_url,
+                json=execute_payload
             )
             response.raise_for_status()
             result = response.json()
 
-            stdout_result = result.get("result", "").strip()
-            self.logger.info(f"Execution stdout: {stdout_result}")
+            # Parse the execution result
+            stdout = result.get("result", "").strip()
+            stderr = result.get("error", "").strip()
+            exit_code = result.get("code", 0)
 
+            self.logger.info(f"Execution completed with exit code {exit_code}")
+            if stdout:
+                self.logger.info(f"stdout: {stdout}")
+            if stderr:
+                self.logger.warning(f"stderr: {stderr}")
+
+            # Step 5: Return the execution output as JSON
             return json.dumps({
-                "stdout": result.get("result", "").strip(),
-                "stderr": result.get("error", "").strip(),
-                "exit_code": result.get("code", 0)
+                "stdout": stdout,
+                "stderr": stderr,
+                "exit_code": exit_code
             }, indent=2)
-        except httpx.HTTPError as e:
-            self.logger.error(f"HTTP error during code execution: {e}")
-            raise
+        except httpx.HTTPStatusError as e:
+            self.logger.error(f"HTTP error during code execution: {e.response.text}")
+            raise RuntimeError(f"HTTP error during code execution: {e.response.text}")
         except Exception as e:
             self.logger.error(f"Error during code execution: {e}")
-            raise
+            raise RuntimeError(f"Error during code execution: {e}")
+        finally:
+            # Removed the call to delete_file(upload_path)
+
+            # Step 6: Cleanup - Delete the local temporary file
+            try:
+                if temp_file_path.exists():
+                    temp_file_path.unlink()
+                    self.logger.debug(f"Deleted local temporary file: {temp_file_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to delete local temporary file: {temp_file_path}, Error: {e}")
 
     async def cleanup_workspace(self) -> None:
         """Clean up workspace"""
@@ -248,6 +419,7 @@ class DaytonaInterpreter:
                 self.logger.error(f"Failed to clean up workspace: {str(e)}")
             finally:
                 self.workspace_id = None
+                self.project_id = None
 
     async def cleanup(self) -> None:
         """Clean up resources"""
@@ -260,7 +432,7 @@ class DaytonaInterpreter:
         """Run the server"""
         try:
             await self.initialize_client()
-            self.workspace_id = await self.create_workspace()
+            await self.create_workspace_and_project()
             
             async with stdio_server() as streams:
                 try:
