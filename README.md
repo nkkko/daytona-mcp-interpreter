@@ -2,6 +2,8 @@
 
 A Model Context Protocol server that provides Python code execution capabilities in Daytona workspaces.
 
+<a href="https://glama.ai/mcp/servers/hj7jlxkxpk"><img width="380" height="200" src="https://glama.ai/mcp/servers/hj7jlxkxpk/badge" alt="Daytona Python Interpreter MCP server" /></a>
+
 ## Installation
 
 1. Install uv if you haven't already:
