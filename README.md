@@ -1,6 +1,6 @@
 # Daytona MCP Python Interpreter
 
-A Model Context Protocol server that provides Python code execution capabilities in Daytona workspaces.
+A Model Context Protocol server that provides Python code execution capabilities in ephemeral Daytona sandbox.
 
 <a href="https://glama.ai/mcp/servers/hj7jlxkxpk"><img width="380" height="200" src="https://glama.ai/mcp/servers/hj7jlxkxpk/badge" alt="Daytona Python Interpreter MCP server" /></a>
 
@@ -11,9 +11,16 @@ A Model Context Protocol server that provides Python code execution capabilities
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-2. Create and activate virtual environment:
+2. Create and activate virtual environment.
+
+To deactivate and remove the virtual environment if it exists already:
 ```bash
+deactivate
 rm -rf .venv 
+```
+
+Create and activate virtual environment:
+```bash
 uv venv
 source .venv/bin/activate 
 ```
@@ -75,6 +82,8 @@ On MacOS (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 ```
 
 On Windows edit `%APPDATA%\Claude\claude_desktop_config.json` and adjust path.
+
+NOTE. You can run `which uv` to get the path to uv.
 
 2. Restart Claude Desktop
 

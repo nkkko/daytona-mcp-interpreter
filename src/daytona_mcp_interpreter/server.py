@@ -20,16 +20,19 @@ LOG_FILE = '/tmp/daytona-interpreter.log'
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
 class Config:
-    """Server configuration"""
+    """Server configuration class that loads environment variables for MCP Daytona setup"""
     def __init__(self):
+        # Load environment variables from .env file
         load_dotenv()
         
+        # Required API key for authentication
         self.api_key = os.getenv('MCP_DAYTONA_API_KEY')
         if not self.api_key:
             raise ValueError("MCP_DAYTONA_API_KEY environment variable is required")
-            
+        
+        # Optional configuration with defaults
         self.api_url = os.getenv('MCP_DAYTONA_API_URL', 'http://localhost:3986')
-        self.timeout = float(os.getenv('MCP_DAYTONA_TIMEOUT', '30.0'))  # Increased timeout
+        self.timeout = float(os.getenv('MCP_DAYTONA_TIMEOUT', '30.0'))
         self.verify_ssl = os.getenv('MCP_VERIFY_SSL', 'false').lower() == 'true'
 
 def setup_logging() -> logging.Logger:
@@ -57,22 +60,30 @@ def setup_logging() -> logging.Logger:
     return logger
 
 class DaytonaInterpreter:
-    """MCP Server for interpreting Python code in Daytona workspaces"""
+    """
+    MCP Server implementation for executing Python code and shell commands in Daytona workspaces.
+    Handles workspace creation, file operations, and command execution.
+    """
 
     def __init__(self, logger: logging.Logger):
+        # Initialize core components
         self.logger = logger
         self.config = Config()
         self.server = Server("daytona-interpreter")
-        self.workspace_id: Optional[str] = None
-        self.project_id: Optional[str] = None  # Specify project ID
-        self.http_client: Optional[httpx.AsyncClient] = None
+        
+        # State tracking
+        self.workspace_id: Optional[str] = None  # Current workspace identifier
+        self.project_id: Optional[str] = None    # Current project identifier
+        self.http_client: Optional[httpx.AsyncClient] = None  # HTTP client for API calls
         
         self.setup_handlers()
         self.logger.info("Initialized DaytonaInterpreter")
 
     def setup_notification_handlers(self):
-        """Set up handlers for various notifications"""
-
+        """
+        Configure handlers for various MCP protocol notifications.
+        Each handler processes specific notification types and performs appropriate actions.
+        """
         async def handle_cancel_request(params: dict[str, Any]) -> None:
             self.logger.info("Received cancellation request")
             await self.cleanup_workspace()
@@ -104,43 +115,78 @@ class DaytonaInterpreter:
             "cancelled": handle_cancelled  # Added handler for 'cancelled' method
         })
 
+
     def setup_handlers(self):
-        """Set up server request handlers"""
-        self.setup_notification_handlers() 
+        """
+        Configure server request handlers for tool listing and execution.
+        Defines available tools and their execution logic.
+        """
+        self.setup_notification_handlers()
 
         @self.server.list_tools()
         async def list_tools() -> List[Tool]:
-            return [Tool(
-                name="python_interpreter",
-                description="Execute Python code in a Daytona workspace",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "code": {"type": "string", "description": "Python code to execute"}
-                    },
-                    "required": ["code"]
-                }
-            )]
+            """
+            Define available tools:
+            1. python_interpreter: Executes Python code in workspace
+            2. command_executor: Executes shell commands in workspace
+            """
+            return [
+                Tool(
+                    name="python_interpreter",
+                    description="Execute Python code in a Daytona workspace",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "code": {"type": "string", "description": "Python code to execute"}
+                        },
+                        "required": ["code"]
+                    }
+                ),
+                Tool(
+                    name="command_executor",
+                    description="Execute a single-line shell command in a Daytona workspace",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "command": {"type": "string", "description": "Shell command to execute"}
+                        },
+                        "required": ["command"]
+                    }
+                )
+            ]
 
         @self.server.call_tool() 
         async def call_tool(name: str, arguments: dict) -> List[TextContent | ImageContent | EmbeddedResource]:
-            if name != "python_interpreter":
+            if name == "python_interpreter":
+                code = arguments.get("code")
+                if not code:
+                    raise ValueError("Code argument is required")
+                try:
+                    result = await self.execute_python_code(code)
+                    return [TextContent(type="text", text=result)]
+                except Exception as e:
+                    self.logger.error(f"Error executing tool '{name}': {e}", exc_info=True)
+                    return [TextContent(type="text", text=f"Error executing tool: {e}")]
+            
+            elif name == "command_executor":
+                command = arguments.get("command")
+                if not command:
+                    raise ValueError("Command argument is required")
+                try:
+                    result = await self.execute_command(command)
+                    return [TextContent(type="text", text=result)]
+                except Exception as e:
+                    self.logger.error(f"Error executing tool '{name}': {e}", exc_info=True)
+                    return [TextContent(type="text", text=f"Error executing tool: {e}")]
+            
+            else:
                 raise ValueError(f"Unknown tool: {name}")
 
-            code = arguments.get("code")
-            if not code:
-                raise ValueError("Code argument is required")
-
-            try:
-                result = await self.execute_python_code(code)
-                return [TextContent(type="text", text=result)]
-            except Exception as e:
-                self.logger.error(f"Error executing tool '{name}': {e}", exc_info=True)
-                return [TextContent(type="text", text=f"Error executing tool: {e}")]
-            # Removed cleanup_workspace from here
-
     async def initialize_client(self) -> None:
-        """Initialize HTTP client"""
+        """
+        Initialize HTTP client with proper configuration for API communication.
+        Sets up authentication, timeout, and SSL verification settings.
+        """
         if self.http_client:
             await self.http_client.aclose()
             
@@ -158,18 +204,18 @@ class DaytonaInterpreter:
         )
         
         # Test connection
-        try:
-            response = await self.http_client.get("/health")
-            response.raise_for_status()
-            self.logger.info("Successfully connected to MCP API")
-        except Exception as e:
-            self.logger.error(f"Failed to connect to MCP API: {e}", exc_info=True)
-            raise
+        # try:
+        #     response = await self.http_client.get("/health")
+        #     response.raise_for_status()
+        #     self.logger.info("Successfully connected to MCP API")
+        # except Exception as e:
+        #     self.logger.error(f"Failed to connect to MCP API: {e}", exc_info=True)
+        #     raise
 
     async def create_workspace_and_project(self) -> None:
         """
-        Create a new Daytona workspace and project.
-        Update self.workspace_id and self.project_id accordingly.
+        Create a new Daytona workspace and project with unique identifiers.
+        Sets up Python environment and initializes with a basic repository.
         """
         workspace_name = f"python-{uuid.uuid4().hex[:8]}"
         project_name = f"python-project-{uuid.uuid4().hex[:8]}"
@@ -182,7 +228,7 @@ class DaytonaInterpreter:
             "projects": [{
                 "name": project_name,
                 "envVars": {"PYTHONUNBUFFERED": "1"},
-                "image": "python:3.10-slim",
+                "image": "python:3.12",
                 "user": "root",
                 "source": {
                     "repository": {
@@ -259,7 +305,8 @@ class DaytonaInterpreter:
 
     async def create_directory(self, directory_path: str) -> None:
         """
-        Create a directory inside the workspace project.
+        Create a directory in the workspace project.
+        Handles path normalization and error cases including existing directories.
         """
         create_dir_url = f"/workspace/{self.workspace_id}/{self.project_id}/toolbox/files/folder"
         self.logger.info(f"Creating directory at {directory_path}")
@@ -297,7 +344,8 @@ class DaytonaInterpreter:
 
     async def upload_file(self, file_path: Path, upload_path: str) -> None:
         """
-        Upload a file to the workspace project.
+        Upload a file to the workspace project using multipart form data.
+        Handles file reading and upload error cases.
         """
         upload_url = f"/workspace/{self.workspace_id}/{self.project_id}/toolbox/files/upload"
         self.logger.info(f"Uploading file {file_path} to {upload_path}")
@@ -325,7 +373,13 @@ class DaytonaInterpreter:
             raise RuntimeError(f"Failed to upload file {file_path.name}: {str(e)}")
 
     async def execute_python_code(self, code: str) -> str:
-        """Execute Python code by uploading it as a file and running it."""
+        """
+        Execute Python code in the workspace by:
+        1. Creating a temporary script file
+        2. Uploading it to the workspace
+        3. Executing it using python3
+        4. Capturing and returning the execution results
+        """
         if not self.workspace_id or not self.project_id:
             raise RuntimeError("Workspace ID or Project ID is not set.")
 
@@ -406,8 +460,59 @@ class DaytonaInterpreter:
             except Exception as e:
                 self.logger.error(f"Failed to delete local temporary file: {temp_file_path}, Error: {e}")
 
+    async def execute_command(self, command: str) -> str:
+        """
+        Execute a shell command in the workspace.
+        Captures and returns command output, errors, and exit code.
+        """
+        if not self.workspace_id or not self.project_id:
+            raise RuntimeError("Workspace ID or Project ID is not set.")
+
+        execute_url = f"/workspace/{self.workspace_id}/{self.project_id}/toolbox/process/execute"
+        execute_payload = {
+            "command": command,
+            "timeout": int(self.config.timeout)
+        }
+
+        self.logger.debug(f"Executing shell command: {command}")
+
+        try:
+            response = await self.http_client.post(
+                execute_url,
+                json=execute_payload
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            # Parse the execution result
+            stdout = result.get("result", "").strip()
+            stderr = result.get("error", "").strip()
+            exit_code = result.get("code", 0)
+
+            self.logger.info(f"Command execution completed with exit code {exit_code}")
+            if stdout:
+                self.logger.info(f"stdout: {stdout}")
+            if stderr:
+                self.logger.warning(f"stderr: {stderr}")
+
+            # Return the execution output as JSON
+            return json.dumps({
+                "stdout": stdout,
+                "stderr": stderr,
+                "exit_code": exit_code
+            }, indent=2)
+        except httpx.HTTPStatusError as e:
+            self.logger.error(f"HTTP error during command execution: {e.response.text}")
+            raise RuntimeError(f"HTTP error during command execution: {e.response.text}")
+        except Exception as e:
+            self.logger.error(f"Error during command execution: {e}")
+            raise RuntimeError(f"Error during command execution: {e}")
+
     async def cleanup_workspace(self) -> None:
-        """Clean up workspace"""
+        """
+        Clean up the workspace by deleting it and resetting state.
+        Called during normal shutdown or error conditions.
+        """
         if self.workspace_id:
             try:
                 await self.http_client.delete(
@@ -422,14 +527,24 @@ class DaytonaInterpreter:
                 self.project_id = None
 
     async def cleanup(self) -> None:
-        """Clean up resources"""
+        """
+        Perform full cleanup of resources:
+        1. Clean up workspace if it exists
+        2. Close HTTP client connection
+        """
         if self.workspace_id:
             await self.cleanup_workspace()
         if self.http_client:
             await self.http_client.aclose()
 
     async def run(self) -> None:
-        """Run the server"""
+        """
+        Main server execution loop:
+        1. Initialize client connection
+        2. Create workspace and project
+        3. Run MCP server with stdio communication
+        4. Handle cleanup on shutdown
+        """
         try:
             await self.initialize_client()
             await self.create_workspace_and_project()
@@ -455,7 +570,12 @@ class DaytonaInterpreter:
             raise
 
 async def main():
-    """Main entry point"""
+    """
+    Application entry point:
+    1. Set up logging
+    2. Create and run interpreter instance
+    3. Handle interrupts and cleanup
+    """
     logger = setup_logging()
     logger.info("Starting Daytona MCP interpreter")
     
