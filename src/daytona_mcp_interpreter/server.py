@@ -204,13 +204,13 @@ class DaytonaInterpreter:
         )
         
         # Test connection
-        try:
-            response = await self.http_client.get("/health")
-            response.raise_for_status()
-            self.logger.info("Successfully connected to MCP API")
-        except Exception as e:
-            self.logger.error(f"Failed to connect to MCP API: {e}", exc_info=True)
-            raise
+        # try:
+        #     response = await self.http_client.get("/health")
+        #     response.raise_for_status()
+        #     self.logger.info("Successfully connected to MCP API")
+        # except Exception as e:
+        #     self.logger.error(f"Failed to connect to MCP API: {e}", exc_info=True)
+        #     raise
 
     async def create_workspace_and_project(self) -> None:
         """
@@ -228,7 +228,7 @@ class DaytonaInterpreter:
             "projects": [{
                 "name": project_name,
                 "envVars": {"PYTHONUNBUFFERED": "1"},
-                "image": "python:3.10-slim",
+                "image": "python:3.12",
                 "user": "root",
                 "source": {
                     "repository": {
