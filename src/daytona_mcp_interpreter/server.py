@@ -1,4 +1,4 @@
-
+import shlex
 import asyncio
 import json
 import logging
@@ -288,6 +288,16 @@ class DaytonaInterpreter:
             raise RuntimeError("Workspace is not initialized.")
 
         try:
+            # For commands containing &&, execute them as a single shell command
+            if '&&' in command:
+                # Wrap the entire command in /bin/sh -c
+                command = f'/bin/sh -c {shlex.quote(command)}'
+            else:
+                # For simple commands, just use shlex.quote on arguments if needed
+                command = command.strip()
+
+            self.logger.debug(f"Executing command: {command}")
+            
             # Execute shell command using the SDK
             response: ExecuteResponse = self.workspace.process.exec(command)
             self.logger.debug(f"ExecuteResponse: {response}")
@@ -300,7 +310,7 @@ class DaytonaInterpreter:
             return json.dumps({
                 "stdout": result,
                 "stderr": "",
-                "exit_code": response.code
+                "exit_code": 0 if response.code is None else response.code
             }, indent=2)
         except Exception as e:
             self.logger.error(f"Error executing command: {e}", exc_info=True)
