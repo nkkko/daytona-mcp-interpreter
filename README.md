@@ -28,7 +28,7 @@ On Windows: .venv\Scripts\activate
 
 3. Install dependencies:
 ```bash
-uv add "mcp[cli]" pydantic python-dotenv
+uv add "mcp[cli]" pydantic python-dotenv daytona-sdk
 ```
 
 ## Development
