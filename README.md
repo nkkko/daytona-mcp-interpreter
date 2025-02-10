@@ -2,7 +2,7 @@
 
 A Model Context Protocol server that provides Python code execution capabilities in ephemeral Daytona sandbox.
 
-<a href="https://glama.ai/mcp/servers/hj7jlxkxpk"><img width="380" height="200" src="https://glama.ai/mcp/servers/hj7jlxkxpk/badge" alt="Daytona Python Interpreter MCP server" /></a>
+[![Watch the video](https://img.youtube.com/vi/26m2MjY8a5c/maxresdefault.jpg)](https://youtu.be/26m2MjY8a5c)
 
 ## Installation
 
@@ -96,3 +96,5 @@ NOTE. You can run `which uv` to get the path to uv.
 - Automatic workspace cleanup
 - Secure execution environment
 - Logging for debugging
+
+<a href="https://glama.ai/mcp/servers/hj7jlxkxpk"><img width="380" height="200" src="https://glama.ai/mcp/servers/hj7jlxkxpk/badge" alt="Daytona Python Interpreter MCP server" /></a>
