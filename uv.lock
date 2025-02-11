@@ -69,7 +69,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "daytona-sdk", specifier = ">=0.6.0" },
+    { name = "daytona-sdk", specifier = "==0.6.0" },
     { name = "httpx", specifier = ">=0.24.0" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.0.0" },
     { name = "pydantic", specifier = ">=2.10.2" },

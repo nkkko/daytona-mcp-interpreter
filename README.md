@@ -16,19 +16,19 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 To deactivate and remove the virtual environment if it exists already:
 ```bash
 deactivate
-rm -rf .venv 
+rm -rf .venv
 ```
 
 Create and activate virtual environment:
 ```bash
 uv venv
-source .venv/bin/activate 
+source .venv/bin/activate
 ```
 On Windows: .venv\Scripts\activate
 
 3. Install dependencies:
 ```bash
-uv add "mcp[cli]" pydantic python-dotenv daytona-sdk
+uv add "mcp[cli]" pydantic python-dotenv daytona-sdk==0.6.0
 ```
 
 ## Development

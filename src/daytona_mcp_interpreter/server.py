@@ -234,7 +234,7 @@ class DaytonaInterpreter:
             self.logger.info("Creating a new Daytona workspace")
             params = CreateWorkspaceParams(
                 language="python"
-                # image="jupyter/datascience-notebook"
+                #image="python:3.13.1-bullseye"
                 # Additional parameters can be defined here
             )
             try:
