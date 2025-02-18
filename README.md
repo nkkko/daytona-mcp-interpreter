@@ -28,7 +28,7 @@ On Windows: .venv\Scripts\activate
 
 3. Install dependencies:
 ```bash
-uv add "mcp[cli]" pydantic python-dotenv daytona-sdk==0.6.0
+uv add "mcp[cli]" pydantic python-dotenv daytona-sdk
 ```
 
 ## Development
@@ -36,6 +36,11 @@ uv add "mcp[cli]" pydantic python-dotenv daytona-sdk==0.6.0
 Run the server directly:
 ```bash
 uv run src/daytona_mcp_interpreter/server.py
+```
+
+Or:
+```
+/Users/USER/.local/bin/uv run ~LOCATION/daytona-mcp-interpreter/src/daytona_mcp_interpreter/server.py
 ```
 
 Or use MCP Inspector:

@@ -26,12 +26,14 @@ from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
 LOG_FILE = '/tmp/daytona-interpreter.log'
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", 8000))
 
 def setup_logging() -> logging.Logger:
     """Configure logging with file and console output"""
     logger = logging.getLogger("daytona-interpreter")
     logger.setLevel(logging.DEBUG)
-    
+
     if not logger.hasHandlers():
         # File handler
         file_handler = RotatingFileHandler(
@@ -41,14 +43,14 @@ def setup_logging() -> logging.Logger:
             encoding='utf-8'
         )
         file_handler.setFormatter(logging.Formatter(LOG_FORMAT))
-        
+
         # Console handler
-        console_handler = logging.StreamHandler(sys.stderr)
-        console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
-        
+        # console_handler = logging.StreamHandler(sys.stderr)
+        # console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+
         logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-        
+        # logger.addHandler(console_handler)
+
     return logger
 
 
@@ -57,14 +59,14 @@ class Config:
     def __init__(self):
         # Load environment variables from .env file
         load_dotenv()
-        
+
         # Required API key for authentication
         self.api_key = os.getenv('MCP_DAYTONA_API_KEY')
         if not self.api_key:
             raise ValueError("MCP_DAYTONA_API_KEY environment variable is required")
         else:
             logging.getLogger("daytona-interpreter").info("MCP_DAYTONA_API_KEY loaded successfully.")
-        
+
         # Optional configuration with defaults
         self.server_url = os.getenv('MCP_DAYTONA_SERVER_URL', 'https://daytona.work/api')  # Renamed
         self.target = os.getenv('MCP_DAYTONA_TARGET', 'local')
@@ -86,7 +88,7 @@ class Config:
 
 class DaytonaInterpreter:
     """
-    MCP Server implementation for executing Python code and shell commands in Daytona workspaces 
+    MCP Server implementation for executing Python code and shell commands in Daytona workspaces
     using the Daytona SDK. Handles workspace creation, file operations, and command execution.
     """
 
@@ -94,7 +96,7 @@ class DaytonaInterpreter:
         # Initialize core components
         self.logger = logger
         self.config = config
-        
+
         # Initialize Daytona SDK client
         self.daytona = Daytona(
             config=DaytonaConfig(
@@ -103,12 +105,12 @@ class DaytonaInterpreter:
                 target=self.config.target
             )
         )
-        
+
         self.workspace: Optional[Workspace] = None  # Current workspace instance
 
         # Initialize MCP server
         self.server = Server("daytona-interpreter")
-        
+
         # Setup MCP handlers
         self.setup_handlers()
         self.logger.info("Initialized DaytonaInterpreter with Daytona SDK and MCP Server")
@@ -209,7 +211,7 @@ class DaytonaInterpreter:
                 except Exception as e:
                     self.logger.error(f"Error executing tool '{name}': {e}", exc_info=True)
                     return [TextContent(type="text", text=f"Error executing tool: {e}")]
-            
+
             elif name == "command_executor":
                 command = arguments.get("command")
                 if not command:
@@ -220,7 +222,7 @@ class DaytonaInterpreter:
                 except Exception as e:
                     self.logger.error(f"Error executing tool '{name}': {e}", exc_info=True)
                     return [TextContent(type="text", text=f"Error executing tool: {e}")]
-            
+
             else:
                 self.logger.error(f"Unknown tool: {name}")
                 raise ValueError(f"Unknown tool: {name}")
@@ -262,13 +264,14 @@ class DaytonaInterpreter:
 
             # Handle the response result
             result = str(response.result).strip() if response.result else ""
+            exit_code = response.exit_code if hasattr(response, 'exit_code') else -1
             self.logger.info(f"Execution Output:\n{result}")
 
             # Return the execution output as JSON
             return json.dumps({
                 "stdout": result,
                 "stderr": "",
-                "exit_code": response.code
+                "exit_code": exit_code
             }, indent=2)
         except Exception as e:
             self.logger.error(f"Error executing Python code: {e}", exc_info=True)
@@ -297,7 +300,7 @@ class DaytonaInterpreter:
                 command = command.strip()
 
             self.logger.debug(f"Executing command: {command}")
-            
+
             # Execute shell command using the SDK
             response: ExecuteResponse = self.workspace.process.exec(command)
             self.logger.debug(f"ExecuteResponse: {response}")
@@ -310,7 +313,7 @@ class DaytonaInterpreter:
             return json.dumps({
                 "stdout": result,
                 "stderr": "",
-                "exit_code": 0 if response.code is None else response.code
+                "exit_code": response.exit_code if hasattr(response, 'exit_code') else -1
             }, indent=2)
         except Exception as e:
             self.logger.error(f"Error executing command: {e}", exc_info=True)
@@ -384,15 +387,18 @@ async def main():
     """
     logger = setup_logging()
     logger.info("Starting Daytona MCP interpreter")
-    
+
+    # Log the server address
+    logger.info(f"MCP Server is running on {HOST}:{PORT}")
+
     try:
         config = Config()
     except Exception as e:
         logger.error(f"Configuration error: {e}")
         sys.exit(1)
-    
+
     interpreter = DaytonaInterpreter(logger, config)
-    
+
     try:
         await interpreter.run()
     except KeyboardInterrupt:
