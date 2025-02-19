@@ -1,0 +1,28 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+
+startCommand:
+  type: stdio
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required:
+      - daytonaApiKey
+      - daytonaApiUrl
+    properties:
+      daytonaApiKey:
+        type: string
+        description: The API key for the Daytona service.
+      daytonaApiUrl:
+        type: string
+        description: The URL for the Daytona API service.
+      daytonaTimeout:
+        type: number
+        description: Request timeout in seconds.
+      verifySsl:
+        type: boolean
+        default: false
+        description: Verify SSL certificates.
+  commandFunction:
+    # A function that produces the CLI command to start the MCP on stdio.
+    |-
+    (config) => ({command:'uv',args:['run','src/daytona_mcp_interpreter/server.py'],env:{PYTHONUNBUFFERED:'1',MCP_DAYTONA_API_KEY:config.daytonaApiKey,MCP_DAYTONA_API_URL:config.daytonaApiUrl,MCP_DAYTONA_TIMEOUT:config.daytonaTimeout.toString(),MCP_VERIFY_SSL:config.verifySsl.toString()}})

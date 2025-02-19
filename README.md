@@ -4,8 +4,19 @@ A Model Context Protocol server that provides Python code execution capabilities
 
 [![Watch the video](https://img.youtube.com/vi/26m2MjY8a5c/maxresdefault.jpg)](https://youtu.be/26m2MjY8a5c)
 
+[![smithery badge](https://smithery.ai/badge/@nkkko/daytona-mcp)](https://smithery.ai/server/@nkkko/daytona-mcp)
+
 ## Installation
 
+### Installing via Smithery
+
+To install Daytona Python Interpreter for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@nkkko/daytona-mcp):
+
+```bash
+npx -y @smithery/cli install @nkkko/daytona-mcp --client claude
+```
+
+### Manual Installation
 1. Install uv if you haven't already:
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
