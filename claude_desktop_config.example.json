@@ -11,11 +11,13 @@
             "env": {
                 "PYTHONUNBUFFERED": "1",
                 "MCP_DAYTONA_API_KEY": "api_key",
-                "MCP_DAYTONA_API_URL": "api_server_url",
-                "MCP_DAYTONA_TIMEOUT": "30.0",
+                "MCP_DAYTONA_SERVER_URL": "https://app.daytona.io/api",
+                "MCP_DAYTONA_TIMEOUT": "180.0",
                 "MCP_VERIFY_SSL": "false",
+                "MCP_DAYTONA_TARGET": "us",
                 "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-            }
+            },
+            "logFile": "~/Library/Logs/Claude/mcp-server-daytona-interpreter.log"
         }
     }
 }
