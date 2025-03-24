@@ -664,7 +664,8 @@ class DaytonaInterpreter:
                 self.logger.info(f"Creating a new Daytona workspace (process {os.getpid()})")
                 params = CreateWorkspaceParams(
                     #image="daytonaio/ai-test:0.2.3",
-                    language="python"
+                    language="python",
+                    user="workspace"  # Add explicit user ownership to the workspace
                     # Additional parameters can be defined here
                 )
 
