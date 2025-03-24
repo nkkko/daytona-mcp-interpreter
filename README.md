@@ -110,7 +110,7 @@ On Windows edit `%APPDATA%\Claude\claude_desktop_config.json` and adjust path.
 
 ## Tools
 
-### Python Interpreter
+### Python Exec
 
 Executes Python code in a Daytona workspace with special support for matplotlib and other plotting libraries.
 
@@ -130,7 +130,7 @@ plt.title("Sine Wave")
 plt.savefig("sine_wave.png")
 ```
 
-### Command Executor
+### Shell Exec
 
 Executes shell commands in the Daytona workspace.
 
@@ -142,31 +142,31 @@ ls -la
 pip install pandas
 ```
 
-### File Downloader
+### File Download
 
 Downloads files from the Daytona workspace with smart handling for large files.
 
 **Basic Usage:**
 ```
-file_downloader(file_path="/path/to/file.txt")
+file_download(file_path="/path/to/file.txt")
 ```
 
 **Advanced Usage:**
 ```
 # Set custom file size limit
-file_downloader(file_path="/path/to/large_file.csv", max_size_mb=10.0)
+file_download(file_path="/path/to/large_file.csv", max_size_mb=10.0)
 
 # Download partial content for large files
-file_downloader(file_path="/path/to/large_file.csv", download_option="download_partial", chunk_size_kb=200)
+file_download(file_path="/path/to/large_file.csv", download_option="download_partial", chunk_size_kb=200)
 
 # Convert large file to text
-file_downloader(file_path="/path/to/large_file.pdf", download_option="convert_to_text")
+file_download(file_path="/path/to/large_file.pdf", download_option="convert_to_text")
 
 # Compress file before downloading
-file_downloader(file_path="/path/to/large_file.bin", download_option="compress_file")
+file_download(file_path="/path/to/large_file.bin", download_option="compress_file")
 
 # Force download despite size
-file_downloader(file_path="/path/to/large_file.zip", download_option="force_download")
+file_download(file_path="/path/to/large_file.zip", download_option="force_download")
 ```
 
 ### Matplotlib Plot Generator
@@ -212,57 +212,57 @@ matplotlib_plot_generator(
 )
 ```
 
-### Git Repository Cloner
+### Git Clone
 
 Clones a Git repository into the Daytona workspace for analysis and code execution.
 
 **Basic Usage:**
 ```
-git_repo_cloner(repo_url="https://github.com/username/repository.git")
+git_clone(repo_url="https://github.com/username/repository.git")
 ```
 
 **Advanced Usage:**
 ```
 # Clone a specific branch
-git_repo_cloner(
+git_clone(
     repo_url="https://github.com/username/repository.git",
     branch="develop"
 )
 
 # Clone to a specific directory with full history
-git_repo_cloner(
+git_clone(
     repo_url="https://github.com/username/repository.git",
     target_path="my_project",
     depth=0  # 0 means full history
 )
 
 # Clone with Git LFS support for repositories with large files
-git_repo_cloner(
+git_clone(
     repo_url="https://github.com/username/large-files-repo.git",
     lfs=True
 )
 ```
 
-### Preview Link Generator
+### Web Preview
 
 Generates a preview URL for web servers running inside the Daytona workspace.
 
 **Basic Usage:**
 ```
 # Generate a preview link for a web server running on port 3000
-preview_link_generator(port=3000)
+web_preview(port=3000)
 ```
 
 **Advanced Usage:**
 ```
 # Generate a preview link with a descriptive name
-preview_link_generator(
+web_preview(
     port=8080,
     description="React Development Server"
 )
 
 # Generate a link without checking if server is running
-preview_link_generator(
+web_preview(
     port=5000,
     check_server=False
 )
@@ -271,7 +271,7 @@ preview_link_generator(
 **Complete Web Server Example:**
 ```python
 # First run a simple web server using Python
-python_interpreter(code="""
+python_exec(code="""
 import http.server
 import socketserver
 import threading
@@ -300,7 +300,7 @@ print("You can now generate a preview link to access it externally")
 """)
 
 # Then generate a preview link for the server
-preview_link_generator(port=8000, description="Python HTTP Server")
+web_preview(port=8000, description="Python HTTP Server")
 ```
 ```
 

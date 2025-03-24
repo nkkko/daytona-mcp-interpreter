@@ -222,13 +222,13 @@ class DaytonaInterpreter:
         async def list_tools() -> List[Tool]:
             """
             Define available tools:
-            1. python_interpreter: Executes Python code in workspace
-            2. command_executor: Executes shell commands in workspace
-            3. file_downloader: Downloads a file from the workspace
+            1. python_exec: Executes Python code in workspace
+            2. shell_exec: Executes shell commands in workspace
+            3. file_download: Downloads a file from the workspace
             """
             return [
                 Tool(
-                    name="python_interpreter",
+                    name="python_exec",
                     description="Execute Python code in a Daytona workspace with special support for matplotlib and other plotting libraries. Code that generates plots will automatically save the images to a temporary directory and return them as base64-encoded data.",
                     inputSchema={
                         "type": "object",
@@ -239,7 +239,7 @@ class DaytonaInterpreter:
                     }
                 ),
                 Tool(
-                    name="command_executor",
+                    name="shell_exec",
                     description="Execute a single-line shell command in a Daytona workspace",
                     inputSchema={
                         "type": "object",
@@ -250,7 +250,7 @@ class DaytonaInterpreter:
                     }
                 ),
                 Tool(
-                    name="file_downloader",
+                    name="file_download",
                     description="Download a file from the Daytona workspace with size limitations and options for handling large files. Supports various formats including images, text files, PDFs, and data formats.",
                     inputSchema={
                         "type": "object",
@@ -264,7 +264,7 @@ class DaytonaInterpreter:
                     }
                 ),
                 Tool(
-                    name="git_repo_cloner",
+                    name="git_clone",
                     description="Clone a Git repository into the Daytona workspace. Supports specifying branch, depth, and Git LFS. The repository contents will be available for use with other tools.",
                     inputSchema={
                         "type": "object",
@@ -279,7 +279,7 @@ class DaytonaInterpreter:
                     }
                 ),
                 Tool(
-                    name="preview_link_generator",
+                    name="web_preview",
                     description="Generate a preview link for a web server running inside the Daytona workspace. The tool checks if a server is running on the specified port and provides a URL that can be accessed externally.",
                     inputSchema={
                         "type": "object",
@@ -303,7 +303,7 @@ class DaytonaInterpreter:
                 self.logger.error("Workspace is not initialized.")
                 raise RuntimeError("Workspace is not initialized.")
 
-            if name == "python_interpreter":
+            if name == "python_exec":
                 code = arguments.get("code")
                 if not code:
                     raise ValueError("Code argument is required")
@@ -314,7 +314,7 @@ class DaytonaInterpreter:
                     self.logger.error(f"Error executing tool '{name}': {e}", exc_info=True)
                     return [TextContent(type="text", text=f"Error executing tool: {e}")]
 
-            elif name == "command_executor":
+            elif name == "shell_exec":
                 command = arguments.get("command")
                 if not command:
                     raise ValueError("Command argument is required")
@@ -325,7 +325,7 @@ class DaytonaInterpreter:
                     self.logger.error(f"Error executing tool '{name}': {e}", exc_info=True)
                     return [TextContent(type="text", text=f"Error executing tool: {e}")]
 
-            elif name == "file_downloader":
+            elif name == "file_download":
                 file_path = arguments.get("file_path")
                 if not file_path:
                     raise ValueError("File path argument is required")
@@ -437,7 +437,7 @@ class DaytonaInterpreter:
                     return [TextContent(type="text", text=f"Error downloading file: {str(e)}")]
                     
                     
-            elif name == "git_repo_cloner":
+            elif name == "git_clone":
                 repo_url = arguments.get("repo_url")
                 if not repo_url:
                     raise ValueError("Repository URL is required")
@@ -495,7 +495,7 @@ class DaytonaInterpreter:
                     self.logger.error(f"Error in git_repo_cloner: {e}", exc_info=True)
                     return [TextContent(type="text", text=f"Error cloning repository: {str(e)}")]
                     
-            elif name == "preview_link_generator":
+            elif name == "web_preview":
                 port = arguments.get("port")
                 if port is None:
                     raise ValueError("Port number is required")
