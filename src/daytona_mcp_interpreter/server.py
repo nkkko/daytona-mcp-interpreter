@@ -15,8 +15,7 @@ import tempfile
 from typing import List, Optional, Any, Union
 
 from dotenv import load_dotenv
-from daytona_sdk import Daytona, DaytonaConfig, CreateWorkspaceParams
-from daytona_sdk.workspace import Workspace
+from daytona_sdk import Daytona, DaytonaConfig, CreateWorkspaceParams, Workspace
 from daytona_sdk.process import ExecuteResponse
 from daytona_sdk.filesystem import FileSystem
 
