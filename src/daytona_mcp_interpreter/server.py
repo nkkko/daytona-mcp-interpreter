@@ -225,8 +225,9 @@ class DaytonaInterpreter:
             1. python_exec: Executes Python code in workspace
             2. shell_exec: Executes shell commands in workspace
             3. file_download: Downloads a file from the workspace
-            4. git_clone: Clones a Git repository into the workspace
-            5. web_preview: Generates a preview URL for web servers
+            4. file_upload: Uploads a file to the workspace
+            5. git_clone: Clones a Git repository into the workspace
+            6. web_preview: Generates a preview URL for web servers
             """
             return [
                 Tool(
@@ -278,6 +279,20 @@ class DaytonaInterpreter:
                             "lfs": {"type": "boolean", "description": "Whether to enable Git LFS (default: false)"}
                         },
                         "required": ["repo_url"]
+                    }
+                ),
+                Tool(
+                    name="file_upload",
+                    description="Upload a file to the Daytona workspace. Accepts file content as base64-encoded string or plain text.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "file_path": {"type": "string", "description": "Path where the file should be created in the workspace"},
+                            "content": {"type": "string", "description": "Content to write to the file (text or base64-encoded binary)"},
+                            "encoding": {"type": "string", "description": "Encoding of the content: 'text' (default) or 'base64'"},
+                            "overwrite": {"type": "boolean", "description": "Whether to overwrite the file if it already exists (default: true)"}
+                        },
+                        "required": ["file_path", "content"]
                     }
                 ),
                 Tool(
@@ -496,6 +511,39 @@ class DaytonaInterpreter:
                 except Exception as e:
                     self.logger.error(f"Error in git_repo_cloner: {e}", exc_info=True)
                     return [TextContent(type="text", text=f"Error cloning repository: {str(e)}")]
+                    
+            elif name == "file_upload":
+                file_path = arguments.get("file_path")
+                content = arguments.get("content")
+                encoding = arguments.get("encoding", "text")
+                overwrite = arguments.get("overwrite", True)
+                
+                if not file_path:
+                    raise ValueError("File path is required")
+                if content is None:
+                    raise ValueError("Content is required")
+                
+                try:
+                    # Add debug logging
+                    self.logger.info(f"Using file_upload with: path={file_path}, encoding={encoding}, overwrite={overwrite}")
+                    
+                    # Call the file_uploader function
+                    result = file_uploader(
+                        file_path=file_path,
+                        content=content,
+                        encoding=encoding,
+                        overwrite=overwrite
+                    )
+                    
+                    self.logger.info(f"Upload result: success={result.get('success', False)}")
+                    
+                    if result.get("success"):
+                        return [TextContent(type="text", text=result.get("message", "File uploaded successfully"))]
+                    else:
+                        return [TextContent(type="text", text=f"Error uploading file: {result.get('error', 'Unknown error')}")], status_code=500
+                except Exception as e:
+                    self.logger.error(f"Error in file_upload: {e}", exc_info=True)
+                    return [TextContent(type="text", text=f"Error uploading file: {str(e)}")]
                     
             elif name == "web_preview":
                 port = arguments.get("port")
@@ -1953,6 +2001,97 @@ def git_repo_cloner(repo_url: str, target_path: str = None, branch: str = None, 
             "repository": repo_url
         }
 
+
+def file_uploader(file_path: str, content: str, encoding: str = "text", overwrite: bool = True):
+    """
+    Upload files to Daytona workspace.
+    Used by the file_upload tool.
+    
+    Args:
+        file_path: Path where the file should be created in the workspace
+        content: Content to write to the file (text or base64-encoded binary)
+        encoding: Encoding of the content: 'text' (default) or 'base64'
+        overwrite: Whether to overwrite the file if it already exists (default: True)
+    
+    Returns:
+        Dict containing upload status and any error messages
+    """
+    try:
+        logger = logging.getLogger("daytona-interpreter")
+        logger.info(f"Uploading file: {file_path}, encoding: {encoding}")
+        
+        # Create workspace tracker to get the shared workspace instance
+        workspace_tracker = WorkspaceTracker()
+        workspace = workspace_tracker.get_workspace()
+        if not workspace:
+            return {
+                "success": False,
+                "error": "No workspace available"
+            }
+        
+        # Get file system instance from workspace
+        fs = workspace.fs
+        
+        # Check if file exists
+        if not overwrite:
+            try:
+                # Try to check file stats, which will raise an exception if file doesn't exist
+                fs.stat(file_path)
+                return {
+                    "success": False,
+                    "error": f"File '{file_path}' already exists and overwrite=False"
+                }
+            except Exception:
+                # File doesn't exist, which is good in this case
+                pass
+        
+        # Prepare content based on encoding
+        if encoding.lower() == "base64":
+            try:
+                # Decode base64 content
+                binary_content = base64.b64decode(content)
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": f"Invalid base64 encoding: {str(e)}"
+                }
+        else:
+            # Default is text encoding
+            binary_content = content.encode('utf-8')
+        
+        # Create parent directories if they don't exist
+        parent_dir = os.path.dirname(file_path)
+        if parent_dir:
+            try:
+                # The SDK will create parent directories as needed, but we'll check first
+                if not fs.dir_exists(parent_dir):
+                    fs.create_folder(parent_dir)
+            except Exception as e:
+                logger.warning(f"Error checking/creating parent directory: {e}")
+                # Continue anyway, as upload_file might handle this
+        
+        # Upload the file
+        fs.upload_file(file_path, binary_content)
+        
+        # Get file size for information
+        file_stat = fs.stat(file_path)
+        file_size = file_stat.get("size", 0)
+        file_size_kb = file_size / 1024
+        
+        return {
+            "success": True,
+            "message": f"File uploaded successfully: {file_path} ({file_size_kb:.2f} KB)",
+            "file_path": file_path,
+            "file_size_bytes": file_size
+        }
+        
+    except Exception as e:
+        logger.error(f"Error uploading file: {e}", exc_info=True)
+        return {
+            "success": False,
+            "error": str(e),
+            "file_path": file_path
+        }
 
 def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = None, chunk_size_kb: int = 100):
     """

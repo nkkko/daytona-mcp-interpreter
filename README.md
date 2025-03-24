@@ -169,6 +169,43 @@ file_download(file_path="/path/to/large_file.bin", download_option="compress_fil
 file_download(file_path="/path/to/large_file.zip", download_option="force_download")
 ```
 
+### File Upload
+
+Uploads files to the Daytona workspace. Supports both text and binary files.
+
+**Basic Usage:**
+```
+# Upload a text file
+file_upload(file_path="/workspace/example.txt", content="Hello, World!")
+```
+
+**Advanced Usage:**
+```
+# Upload a text file with specific path
+file_upload(
+    file_path="/workspace/data/config.json",
+    content='{"setting": "value", "enabled": true}'
+)
+
+# Upload a binary file using base64 encoding
+import base64
+with open("local_image.png", "rb") as f:
+    base64_content = base64.b64encode(f.read()).decode('utf-8')
+
+file_upload(
+    file_path="/workspace/images/uploaded.png",
+    content=base64_content,
+    encoding="base64"
+)
+
+# Upload without overwriting existing files
+file_upload(
+    file_path="/workspace/important.txt",
+    content="New content",
+    overwrite=False
+)
+```
+
 ### Matplotlib Plot Generator
 
 Generates optimized matplotlib plots with controlled format and resolution settings.
