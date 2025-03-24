@@ -222,25 +222,13 @@ class DaytonaInterpreter:
         async def list_tools() -> List[Tool]:
             """
             Define available tools:
-            1. python_exec: Executes Python code in workspace
-            2. shell_exec: Executes shell commands in workspace
-            3. file_download: Downloads a file from the workspace
-            4. file_upload: Uploads a file to the workspace
-            5. git_clone: Clones a Git repository into the workspace
-            6. web_preview: Generates a preview URL for web servers
+            1. shell_exec: Executes shell commands in workspace
+            2. file_download: Downloads a file from the workspace
+            3. file_upload: Uploads a file to the workspace
+            4. git_clone: Clones a Git repository into the workspace
+            5. web_preview: Generates a preview URL for web servers
             """
             return [
-                Tool(
-                    name="python_exec",
-                    description="Execute Python code in a Daytona workspace with special support for matplotlib and other plotting libraries. Code that generates plots will automatically save the images to a temporary directory and return them as base64-encoded data.",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "code": {"type": "string", "description": "Python code to execute"}
-                        },
-                        "required": ["code"]
-                    }
-                ),
                 Tool(
                     name="shell_exec",
                     description="Execute a single-line shell command in a Daytona workspace",
@@ -320,18 +308,7 @@ class DaytonaInterpreter:
                 self.logger.error("Workspace is not initialized.")
                 raise RuntimeError("Workspace is not initialized.")
 
-            if name == "python_exec":
-                code = arguments.get("code")
-                if not code:
-                    raise ValueError("Code argument is required")
-                try:
-                    result = await self.execute_python_code(code)
-                    return [TextContent(type="text", text=result)]
-                except Exception as e:
-                    self.logger.error(f"Error executing tool '{name}': {e}", exc_info=True)
-                    return [TextContent(type="text", text=f"Error executing tool: {e}")]
-
-            elif name == "shell_exec":
+            if name == "shell_exec":
                 command = arguments.get("command")
                 if not command:
                     raise ValueError("Command argument is required")

@@ -1,4 +1,4 @@
-# Daytona MCP Python Interpreter
+# Daytona MCP Interpreter
 
 A Model Context Protocol server that provides Python code execution capabilities in ephemeral Daytona sandbox.
 
@@ -109,27 +109,6 @@ On Windows edit `%APPDATA%\Claude\claude_desktop_config.json` and adjust path.
 - Logging for debugging
 
 ## Tools
-
-### Python Exec
-
-Executes Python code in a Daytona workspace with special support for matplotlib and other plotting libraries.
-
-```python
-# Example: Simple calculation
-result = 42 * 2
-print(f"The answer is {result}")
-
-# Example: Matplotlib plotting
-import matplotlib.pyplot as plt
-import numpy as np
-
-x = np.linspace(0, 10, 100)
-y = np.sin(x)
-plt.plot(x, y)
-plt.title("Sine Wave")
-plt.savefig("sine_wave.png")
-```
-
 ### Shell Exec
 
 Executes shell commands in the Daytona workspace.
@@ -305,41 +284,13 @@ web_preview(
 )
 ```
 
-**Complete Web Server Example:**
-```python
-# First run a simple web server using Python
-python_exec(code="""
-import http.server
-import socketserver
-import threading
-
-# Define server on port 8000
-PORT = 8000
-Handler = http.server.SimpleHTTPRequestHandler
-
-# Create a simple HTML file
-with open('index.html', 'w') as f:
-    f.write('<html><body><h1>Hello from Daytona!</h1></body></html>')
-
-# Start server in a separate thread so it doesn't block
-def run_server():
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print(f"Server running at port {PORT}")
-        httpd.serve_forever()
-
-# Start the server thread
-server_thread = threading.Thread(target=run_server)
-server_thread.daemon = True
-server_thread.start()
-
-print(f"Server started on port {PORT}")
-print("You can now generate a preview link to access it externally")
-""")
+**Example:**
+```bash
+# First run a simple web server using Python via the shell
+shell_exec(command="python -m http.server 8000 &")
 
 # Then generate a preview link for the server
 web_preview(port=8000, description="Python HTTP Server")
 ```
-```
-
 <a href="https://glama.ai/mcp/servers/hj7jlxkxpk"><img width="380" height="200" src="https://glama.ai/mcp/servers/hj7jlxkxpk/badge" alt="Daytona Python Interpreter MCP server" /></a>
 [![smithery badge](https://smithery.ai/badge/@nkkko/daytona-mcp)](https://smithery.ai/server/@nkkko/daytona-mcp)
