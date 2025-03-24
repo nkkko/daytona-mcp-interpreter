@@ -225,6 +225,8 @@ class DaytonaInterpreter:
             1. python_exec: Executes Python code in workspace
             2. shell_exec: Executes shell commands in workspace
             3. file_download: Downloads a file from the workspace
+            4. git_clone: Clones a Git repository into the workspace
+            5. web_preview: Generates a preview URL for web servers
             """
             return [
                 Tool(
@@ -337,7 +339,7 @@ class DaytonaInterpreter:
                 
                 try:
                     # Add extra debug logging
-                    self.logger.info(f"Using file_downloader with: path={file_path}, max_size={max_size_mb}MB, option={download_option}, chunk_size={chunk_size_kb}KB")
+                    self.logger.info(f"Using file_download with: path={file_path}, max_size={max_size_mb}MB, option={download_option}, chunk_size={chunk_size_kb}KB")
                     
                     # Call our improved file_downloader function
                     result = file_downloader(
@@ -450,9 +452,9 @@ class DaytonaInterpreter:
                 
                 try:
                     # Add debug logging
-                    self.logger.info(f"Using git_repo_cloner with: url={repo_url}, target={target_path}, branch={branch}, depth={depth}, lfs={lfs}")
+                    self.logger.info(f"Using git_clone with: url={repo_url}, target={target_path}, branch={branch}, depth={depth}, lfs={lfs}")
                     
-                    # Call the git_repo_cloner function
+                    # Call the git_clone function
                     result = git_repo_cloner(
                         repo_url=repo_url,
                         target_path=target_path,
@@ -513,8 +515,8 @@ class DaytonaInterpreter:
                 check_server = arguments.get("check_server", True)
                 
                 try:
-                    # Call the preview_link_generator function
-                    self.logger.info(f"Using preview_link_generator with port={port}")
+                    # Call the web_preview function
+                    self.logger.info(f"Using web_preview with port={port}")
                     result = preview_link_generator(
                         port=port,
                         description=description,
@@ -1697,6 +1699,7 @@ def get_content_type(file_path: str) -> str:
 def preview_link_generator(port: int, description: str = "", check_server: bool = True):
     """
     Generate a preview link for a web server running inside the Daytona workspace.
+    Used by the web_preview tool.
     
     Args:
         port: The port number the server is running on
@@ -1821,6 +1824,7 @@ def preview_link_generator(port: int, description: str = "", check_server: bool 
 def git_repo_cloner(repo_url: str, target_path: str = None, branch: str = None, depth: int = 1, lfs: bool = False):
     """
     Clone a Git repository into the Daytona workspace.
+    Used by the git_clone tool.
     
     Args:
         repo_url: The URL of the Git repository to clone (https or ssh)
@@ -1953,6 +1957,7 @@ def git_repo_cloner(repo_url: str, target_path: str = None, branch: str = None, 
 def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = None, chunk_size_kb: int = 100):
     """
     Download files from Daytona workspace with advanced handling for large files.
+    Used by the file_download tool.
     
     Args:
         path: Path to the file in the Daytona workspace
