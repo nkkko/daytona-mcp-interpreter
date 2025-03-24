@@ -231,7 +231,7 @@ class DaytonaInterpreter:
             return [
                 Tool(
                     name="shell_exec",
-                    description="Execute a single-line shell command in a Daytona workspace",
+                    description="Execute shell commands in the ephemeral Daytona Linux environment. Returns full stdout and stderr output with exit codes. Commands have workspace user permissions and can install packages, modify files, and interact with running services. Always use /tmp directory. Use verbose flags where available for better output.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -242,7 +242,7 @@ class DaytonaInterpreter:
                 ),
                 Tool(
                     name="file_download",
-                    description="Download a file from the Daytona workspace with size limitations and options for handling large files. Supports various formats including images, text files, PDFs, and data formats.",
+                    description="Download files from the Daytona workspace with smart handling for different file types and sizes. Supports text, binary, images, PDFs, and other formats with automatic content type detection. Results can be returned as text, base64-encoded data, or embedded resources.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -256,7 +256,7 @@ class DaytonaInterpreter:
                 ),
                 Tool(
                     name="git_clone",
-                    description="Clone a Git repository into the Daytona workspace. Supports specifying branch, depth, and Git LFS. The repository contents will be available for use with other tools.",
+                    description="Clone Git repositories into the Daytona workspace with customizable options. Supports branch/tag selection, shallow clones, Git LFS for large files, and SSH/HTTPS authentication. Cloned content persists during the session and can be accessed by other tools. Returns repository structure and metadata for easier navigation.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -271,7 +271,7 @@ class DaytonaInterpreter:
                 ),
                 Tool(
                     name="file_upload",
-                    description="Upload a file to the Daytona workspace. Accepts file content as base64-encoded string or plain text.",
+                    description="Upload files to the Daytona workspace from text or base64-encoded binary content. Creates necessary parent directories automatically and verifies successful writes. Files persist during the session and have appropriate permissions for further tool operations. Supports overwrite controls and maintains original file formats.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -285,7 +285,7 @@ class DaytonaInterpreter:
                 ),
                 Tool(
                     name="web_preview",
-                    description="Generate a preview link for a web server running inside the Daytona workspace. The tool checks if a server is running on the specified port and provides a URL that can be accessed externally.",
+                    description="Generate accessible preview URLs for web applications running in the Daytona workspace. Creates a secure tunnel to expose local ports externally without configuration. Validates if a server is actually running on the specified port and provides diagnostic information for troubleshooting. Supports custom descriptions and metadata for better organization of multiple services.",
                     inputSchema={
                         "type": "object",
                         "properties": {
@@ -2019,8 +2019,15 @@ def file_uploader(file_path: str, content: str, encoding: str = "text", overwrit
                     )
                 )
                 
-                # Get workspace by ID
-                workspace = daytona.get_by_id(workspace_id)
+                # Get workspace by ID - using proper method from Daytona SDK
+                # The get_by_id method doesn't exist in current SDK version
+                # Get the current workspace using workspace ID
+                all_workspaces = daytona.list()
+                workspace = None
+                for ws in all_workspaces:
+                    if ws.id == workspace_id:
+                        workspace = ws
+                        break
         except Exception as e:
             logger.error(f"Error getting workspace: {e}")
             return {
@@ -2040,8 +2047,9 @@ def file_uploader(file_path: str, content: str, encoding: str = "text", overwrit
         # Check if file exists
         if not overwrite:
             try:
-                # Try to check file stats, which will raise an exception if file doesn't exist
-                fs.stat(file_path)
+                # Try to check file info, which will raise an exception if file doesn't exist
+                # Use get_file_info instead of stat (which doesn't exist in the FileSystem class)
+                fs.get_file_info(file_path)
                 return {
                     "success": False,
                     "error": f"File '{file_path}' already exists and overwrite=False"
@@ -2079,8 +2087,8 @@ def file_uploader(file_path: str, content: str, encoding: str = "text", overwrit
         fs.upload_file(file_path, binary_content)
 
         # Get file size for information
-        file_stat = fs.stat(file_path)
-        file_size = file_stat.get("size", 0)
+        file_info = fs.get_file_info(file_path)
+        file_size = file_info.size  # The size attribute in FileInfo class
         file_size_kb = file_size / 1024
 
         return {
