@@ -624,7 +624,7 @@ class DaytonaInterpreter:
                 self.logger.info(f"Acquired file lock for workspace initialization (process {os.getpid()})")
 
                 # Check if another process has already initialized the workspace
-                workspace_id, created_at = get_active_workspace()
+                workspace_id, created_at = get_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
                 if workspace_id:
                     try:
                         self.logger.info(f"Found active workspace ID: {workspace_id} (process {os.getpid()})")
@@ -648,16 +648,19 @@ class DaytonaInterpreter:
 
                         # If we get here, the workspace in the file wasn't found in Daytona
                         self.logger.warning(f"Workspace {workspace_id} not found in Daytona, clearing tracking")
-                        clear_active_workspace()
+                        # Use filesystem if available for this instance
+                        clear_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
                     except Exception as e:
                         self.logger.warning(f"Error fetching workspace: {e}")
                         # Clear tracking file to prevent future issues
-                        clear_active_workspace()
+                        # Use filesystem if available for this instance
+                        clear_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
 
                 # If we get here, we need to create a new workspace
                 if os.path.exists(WORKSPACE_TRACKING_FILE):
                     self.logger.info(f"Clearing stale workspace tracking file")
-                    clear_active_workspace()
+                    # Use filesystem if available for this instance
+                    clear_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
 
                 # Only create a new workspace if we don't have a valid tracking file
                 self.logger.info(f"Creating a new Daytona workspace (process {os.getpid()})")
@@ -708,7 +711,7 @@ class DaytonaInterpreter:
 
                         # Save workspace ID to tracking file for other processes to reuse
                         # This must happen BEFORE releasing the lock to prevent race conditions
-                        set_active_workspace(workspace_id)
+                        set_active_workspace(workspace_id, self.filesystem)
                         self.logger.info(f"Registered workspace ID {workspace_id} in tracking file")
                         break
                     except Exception as e:
@@ -1145,7 +1148,7 @@ except Exception:
         # Use file lock to ensure only one process cleans up
         with FileLock(WORKSPACE_LOCK_FILE):
             # Check if this instance's workspace is the active workspace
-            active_id, _ = get_active_workspace()
+            active_id, _ = get_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
             if active_id and active_id == workspace_id:
                 try:
                     # Log that we're about to clean up
@@ -1155,7 +1158,7 @@ except Exception:
                     self.daytona.remove(self.workspace)
 
                     # Clear tracking file so other processes know it's gone
-                    clear_active_workspace()
+                    clear_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
 
                     # Log success
                     self.logger.info(f"Successfully removed Workspace ID: {workspace_id}")
@@ -1424,10 +1427,10 @@ except Exception:
                 # Only attempt if we have an active workspace
                 if self.workspace:
                     # Check if our workspace is the active one
-                    active_id, _ = get_active_workspace()
+                    active_id, _ = get_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
                     if active_id == self.workspace.id:
                         # We own the tracking file, so clean it up
-                        clear_active_workspace()
+                        clear_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
                         self.logger.info("Cleared workspace tracking file")
             except Exception as e:
                 self.logger.warning(f"Error clearing workspace tracking: {e}")
@@ -1999,9 +2002,24 @@ def file_uploader(file_path: str, content: str, encoding: str = "text", overwrit
 
         # Get workspace from the tracking file
         try:
-            with open(WORKSPACE_TRACKING_FILE, 'r') as f:
-                workspace_data = json.load(f)
-                workspace_id = workspace_data.get('workspace_id')
+            # Initialize Daytona SDK
+            config = Config()
+            daytona = Daytona(
+                config=DaytonaConfig(
+                    api_key=config.api_key,
+                    server_url=config.server_url,
+                    target=config.target
+                )
+            )
+            
+            # First, try to use the FileSystem from an existing interpreter instance
+            global _interpreter_instance
+            if _interpreter_instance and _interpreter_instance.workspace and _interpreter_instance.filesystem:
+                logger.info("Using existing workspace from interpreter instance")
+                workspace = _interpreter_instance.workspace
+            else:
+                # Get workspace ID from tracking file
+                workspace_id, _ = get_active_workspace()
                 
                 if not workspace_id:
                     return {
@@ -2009,18 +2027,6 @@ def file_uploader(file_path: str, content: str, encoding: str = "text", overwrit
                         "error": "No workspace ID found in tracking file"
                     }
                 
-                # Initialize Daytona SDK
-                config = Config()
-                daytona = Daytona(
-                    config=DaytonaConfig(
-                        api_key=config.api_key,
-                        server_url=config.server_url,
-                        target=config.target
-                    )
-                )
-                
-                # Get workspace by ID - using proper method from Daytona SDK
-                # The get_by_id method doesn't exist in current SDK version
                 # Get the current workspace using workspace ID
                 all_workspaces = daytona.list()
                 workspace = None
@@ -2138,42 +2144,65 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
             filesystem = workspace.fs
             needs_cleanup = True
 
-        # First check if file exists
+        # First check if file exists and get file info using Daytona FileSystem
         try:
-            response = workspace.process.exec(f"test -f {shlex.quote(path)} && echo 'exists' || echo 'not exists'")
-            if "exists" not in str(response.result):
-                raise FileNotFoundError(f"File not found: {path}")
-        except Exception as e:
-            logger.warning(f"Error checking if file exists: {e}")
-
-        # Get file info
-        try:
-            # Use ls to get file info if get_file_info is not available
-            cmd = f"ls -la {shlex.quote(path)}"
-            file_stat = workspace.process.exec(cmd)
-            file_info_text = str(file_stat.result).strip()
-
-            # Get file size using stat command
-            size_cmd = f"stat -f %z {shlex.quote(path)}"
-            size_result = workspace.process.exec(size_cmd)
-            file_size = int(str(size_result.result).strip())
-
-            # Get mime type
-            mime_cmd = f"file --mime-type -b {shlex.quote(path)}"
-            mime_result = workspace.process.exec(mime_cmd)
-            mime_type = str(mime_result.result).strip()
-
-            file_info = {
-                "name": os.path.basename(path),
-                "size": file_size,
-                "mime_type": mime_type,
-                "info": file_info_text
-            }
-            logger.info(f"File info: {file_info}")
-        except Exception as e:
-            logger.warning(f"Error getting file info: {e}")
-            # Use filesystem API as fallback
+            # Use filesystem.get_file_info to check if file exists and get size information
             file_info = filesystem.get_file_info(path)
+            logger.info(f"File exists: {path}")
+            
+            # Get additional information with process.exec for backward compatibility
+            try:
+                # Get mime type
+                mime_cmd = f"file --mime-type -b {shlex.quote(path)}"
+                mime_result = workspace.process.exec(mime_cmd)
+                mime_type = str(mime_result.result).strip()
+                
+                # Set complete file info
+                file_info = {
+                    "name": os.path.basename(path),
+                    "size": file_info.size,  # Use size from FileSystem's get_file_info
+                    "mime_type": mime_type
+                }
+                logger.debug(f"Enhanced file info with MIME type: {mime_type}")
+            except Exception as e:
+                # If getting additional info fails, create minimal file_info dict
+                logger.warning(f"Error getting additional file info: {e}")
+                file_info = {
+                    "name": os.path.basename(path),
+                    "size": file_info.size
+                }
+            
+            logger.info(f"File info: {file_info}")
+            
+        except Exception as e:
+            logger.warning(f"Error checking file with FileSystem: {e}")
+            
+            # Fall back to process.exec method
+            try:
+                # Check if file exists
+                response = workspace.process.exec(f"test -f {shlex.quote(path)} && echo 'exists' || echo 'not exists'")
+                if "exists" not in str(response.result):
+                    raise FileNotFoundError(f"File not found: {path}")
+                    
+                # Get file size using stat command
+                size_cmd = f"stat -f %z {shlex.quote(path)}"
+                size_result = workspace.process.exec(size_cmd)
+                file_size = int(str(size_result.result).strip())
+                
+                # Get mime type
+                mime_cmd = f"file --mime-type -b {shlex.quote(path)}"
+                mime_result = workspace.process.exec(mime_cmd)
+                mime_type = str(mime_result.result).strip()
+                
+                file_info = {
+                    "name": os.path.basename(path),
+                    "size": file_size,
+                    "mime_type": mime_type
+                }
+                logger.info(f"File info (via exec): {file_info}")
+            except Exception as e:
+                logger.error(f"File does not exist or cannot be accessed: {e}")
+                raise FileNotFoundError(f"File not found or inaccessible: {path}")
 
         # Calculate size in MB
         size_mb = file_info["size"] / (1024 * 1024) if isinstance(file_info, dict) else file_info.size / (1024 * 1024)
@@ -2210,34 +2239,49 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
         # Process according to download option for large files
         if size_mb > max_size_mb and download_option:
             if download_option == "download_partial":
-                # Download first chunk of the file
+                # Download first chunk of the file using combined approach
                 chunk_size_bytes = chunk_size_kb * 1024
-                head_cmd = f"head -c {chunk_size_bytes} {shlex.quote(path)} | base64"
-                head_result = workspace.process.exec(head_cmd)
-
-                # Decode base64 content
+                
                 try:
+                    # Try to get a chunk using filesystem API if available
+                    # Since FileSystem doesn't have a direct partial download method,
+                    # we'll use process.exec to create a temporary file with the chunk
+                    temp_chunk_path = f"/tmp/chunk_{uuid.uuid4()}.tmp"
+                    
+                    # Create the chunk
+                    workspace.process.exec(f"head -c {chunk_size_bytes} {shlex.quote(path)} > {temp_chunk_path}")
+                    
+                    # Use filesystem to download the chunk
+                    content = filesystem.download_file(temp_chunk_path)
+                    
+                    # Remove temp file
+                    workspace.process.exec(f"rm {temp_chunk_path}")
+                    
+                except Exception as e:
+                    logger.warning(f"Error using filesystem for partial download: {e}, falling back to process.exec")
+                    # Fallback to direct base64 encoding
+                    head_cmd = f"head -c {chunk_size_bytes} {shlex.quote(path)} | base64"
+                    head_result = workspace.process.exec(head_cmd)
+                    
+                    # Decode base64 content
                     content_b64 = str(head_result.result).strip()
                     content = base64.b64decode(content_b64)
 
-                    # Clean up if needed
-                    if needs_cleanup:
-                        daytona.remove(workspace)
+                # Clean up if needed
+                if needs_cleanup:
+                    daytona.remove(workspace)
 
-                    return {
-                        "success": True,
-                        "filename": os.path.basename(path),
-                        "content_type": get_content_type(path),
-                        "size": file_info["size"] if isinstance(file_info, dict) else file_info.size,
-                        "content": content,
-                        "partial": True,
-                        "downloaded_bytes": len(content),
-                        "total_bytes": file_info["size"] if isinstance(file_info, dict) else file_info.size,
-                        "message": f"Downloaded first {chunk_size_kb}KB of file."
-                    }
-                except Exception as e:
-                    logger.error(f"Error decoding partial content: {e}")
-                    raise
+                return {
+                    "success": True,
+                    "filename": os.path.basename(path),
+                    "content_type": get_content_type(path),
+                    "size": file_info["size"] if isinstance(file_info, dict) else file_info.size,
+                    "content": content,
+                    "partial": True,
+                    "downloaded_bytes": len(content),
+                    "total_bytes": file_info["size"] if isinstance(file_info, dict) else file_info.size,
+                    "message": f"Downloaded first {chunk_size_kb}KB of file."
+                }
 
             elif download_option == "convert_to_text":
                 # Try to convert file to text (works best for PDFs, code files, etc.)
@@ -2328,14 +2372,8 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
 
         # Download the file normally
         try:
-            # Download using filesystem API
-            if hasattr(filesystem, 'download_file'):
-                content = filesystem.download_file(path)
-            else:
-                # Fallback to base64 encoding through exec
-                cat_cmd = f"cat {shlex.quote(path)} | base64"
-                cat_result = workspace.process.exec(cat_cmd)
-                content = base64.b64decode(str(cat_result.result).strip())
+            # Download using Daytona FileSystem API
+            content = filesystem.download_file(path)
 
             logger.info(f"Successfully downloaded file: {path}, size: {len(content)} bytes")
 
@@ -2365,47 +2403,120 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
             "file_path": path
         }
 
-def get_active_workspace():
+def get_active_workspace(filesystem=None):
     """
     Get the active workspace ID from the tracking file.
     Returns a tuple of (workspace_id, creation_time) or (None, None).
+    
+    Args:
+        filesystem: Optional Daytona FileSystem instance to use for file operations
     """
+    logger = logging.getLogger("daytona-interpreter")
+    
+    # Try using Daytona FileSystem if available
+    if filesystem:
+        try:
+            # Check if the file exists using Daytona
+            response = filesystem.instance.process.exec(f"test -f {shlex.quote(WORKSPACE_TRACKING_FILE)} && echo 'exists'")
+            if response.stdout.strip() == 'exists':
+                # Use Daytona to read the file
+                content = filesystem.download_file(WORKSPACE_TRACKING_FILE)
+                if content:
+                    data = json.loads(content.decode('utf-8'))
+                    logger.debug(f"Read workspace tracking file using Daytona FileSystem")
+                    return data.get('workspace_id'), data.get('created_at')
+        except Exception as e:
+            logger.warning(f"Failed to use Daytona FileSystem to read workspace tracking: {e}")
+    
+    # Fallback to standard file operations
     try:
         if os.path.exists(WORKSPACE_TRACKING_FILE):
             with open(WORKSPACE_TRACKING_FILE, 'r') as f:
                 data = json.load(f)
                 return data.get('workspace_id'), data.get('created_at')
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Failed to read workspace tracking file: {e}")
+    
     return None, None
 
-def set_active_workspace(workspace_id):
-    """Set the active workspace ID in the tracking file."""
-    # Create directory if needed
-    tracking_dir = os.path.dirname(WORKSPACE_TRACKING_FILE)
+def set_active_workspace(workspace_id, filesystem=None):
+    """
+    Set the active workspace ID in the tracking file.
+    Uses Daytona FileSystem if available, falls back to standard file operations.
+    
+    Args:
+        workspace_id: ID of the workspace to set as active
+        filesystem: Optional Daytona FileSystem instance to use for file operations
+    """
+    logger = logging.getLogger("daytona-interpreter")
+    data = {
+        'workspace_id': workspace_id,
+        'created_at': int(time.time()),
+        'pid': os.getpid()
+    }
+    
+    # Use Daytona FileSystem if available
+    if filesystem:
+        try:
+            # Convert to JSON string and encode as bytes
+            content = json.dumps(data).encode('utf-8')
+            
+            # Create directory if needed (using process.exec)
+            tracking_dir = os.path.dirname(WORKSPACE_TRACKING_FILE)
+            filesystem.instance.process.exec(f"mkdir -p {shlex.quote(tracking_dir)}")
+                    
+            # Use filesystem to write the file
+            filesystem.upload_file(WORKSPACE_TRACKING_FILE, content)
+            logger.debug(f"Workspace tracking file updated using Daytona FileSystem")
+            return
+        except Exception as e:
+            logger.warning(f"Failed to use Daytona FileSystem for workspace tracking: {e}")
+    
+    # Fallback to standard file operations
     try:
-        os.makedirs(tracking_dir, mode=0o777, exist_ok=True)
+        # Create directory if needed
+        tracking_dir = os.path.dirname(WORKSPACE_TRACKING_FILE)
+        try:
+            os.makedirs(tracking_dir, mode=0o777, exist_ok=True)
+        except Exception as e:
+            logger.warning(f"Failed to create tracking directory with permissions: {e}")
+            # Try again without setting permissions
+            os.makedirs(tracking_dir, exist_ok=True)
+
+        with open(WORKSPACE_TRACKING_FILE, 'w') as f:
+            json.dump(data, f)
     except Exception as e:
-        logger = logging.getLogger("daytona-interpreter")
-        logger.warning(f"Failed to create tracking directory with permissions: {e}")
-        # Try again without setting permissions
-        os.makedirs(tracking_dir, exist_ok=True)
+        logger.error(f"Failed to update workspace tracking file: {e}")
 
-    with open(WORKSPACE_TRACKING_FILE, 'w') as f:
-        data = {
-            'workspace_id': workspace_id,
-            'created_at': int(time.time()),
-            'pid': os.getpid()
-        }
-        json.dump(data, f)
-
-def clear_active_workspace():
-    """Clear the active workspace ID from the tracking file."""
+def clear_active_workspace(filesystem=None):
+    """
+    Clear the active workspace ID from the tracking file.
+    Uses Daytona FileSystem if available, falls back to standard file operations.
+    
+    Args:
+        filesystem: Optional Daytona FileSystem instance to use for file operations
+    """
+    logger = logging.getLogger("daytona-interpreter")
+    
+    # Try using Daytona FileSystem if available
+    if filesystem:
+        try:
+            # Check if the file exists using Daytona process.exec
+            response = filesystem.instance.process.exec(f"test -f {shlex.quote(WORKSPACE_TRACKING_FILE)} && echo 'exists'")
+            if response.stdout.strip() == 'exists':
+                # Use rm command with process.exec
+                filesystem.instance.process.exec(f"rm {shlex.quote(WORKSPACE_TRACKING_FILE)}")
+                logger.debug(f"Workspace tracking file removed using Daytona FileSystem")
+                return
+        except Exception as e:
+            logger.warning(f"Failed to use Daytona FileSystem to clear workspace tracking: {e}")
+    
+    # Fallback to standard file operations
     try:
         if os.path.exists(WORKSPACE_TRACKING_FILE):
             os.unlink(WORKSPACE_TRACKING_FILE)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Failed to remove workspace tracking file: {e}")
 
 def cleanup_stale_workspaces(daytona_instance, max_age_days=1, logger=None):
     """
