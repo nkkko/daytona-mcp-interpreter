@@ -11,3 +11,6 @@ wheels/
 
 # Env file
 .env
+
+# MCP config
+.mcp.json

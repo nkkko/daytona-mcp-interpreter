@@ -2,7 +2,7 @@
 
 A Model Context Protocol server that provides Python code execution capabilities in ephemeral Daytona sandboxes.
 
-[![Watch the video](https://img.youtube.com/vi/26m2MjY8a5c/maxresdefault.jpg)](https://youtu.be/26m2MjY8a5c)
+![Daytona MCP Server in Claude Desktop](image.png)
 
 ## Overview
 
@@ -84,9 +84,11 @@ tail -f /tmp/daytona-interpreter.log
 
 ## Integration with Claude Desktop
 
+[![Watch the demo video](https://img.youtube.com/vi/26m2MjY8a5c/maxresdefault.jpg)](https://youtu.be/26m2MjY8a5c)
+
 1. Configure in Claude Desktop (or other MCP-compatible clients):
 
-On MacOS, edit: `~/Library/Application Support/Claude/claude_desktop_config.json`  
+On MacOS, edit: `~/Library/Application Support/Claude/claude_desktop_config.json`
 On Windows, edit: `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
@@ -104,7 +106,7 @@ On Windows, edit: `%APPDATA%\Claude\claude_desktop_config.json`
                 "PYTHONUNBUFFERED": "1",
                 "MCP_DAYTONA_API_KEY": "api_key",
                 "MCP_DAYTONA_SERVER_URL": "api_server_url",
-                "MCP_DAYTONA_TIMEOUT": "30.0", 
+                "MCP_DAYTONA_TIMEOUT": "30.0",
                 "MCP_VERIFY_SSL": "false",
                 "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
             }
