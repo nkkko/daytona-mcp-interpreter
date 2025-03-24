@@ -664,7 +664,7 @@ class DaytonaInterpreter:
                 params = CreateWorkspaceParams(
                     #image="daytonaio/ai-test:0.2.3",
                     language="python",
-                    user="workspace"  # Add explicit user ownership to the workspace
+                    os_user="workspace"  # Fix: use os_user instead of user parameter
                     # Additional parameters can be defined here
                 )
 
