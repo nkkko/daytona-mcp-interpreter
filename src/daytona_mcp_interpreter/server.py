@@ -23,6 +23,62 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
 
+
+# Custom exception classes for better error handling
+class DaytonaError(Exception):
+    """Base exception class for all Daytona-related errors."""
+    pass
+
+
+class WorkspaceError(DaytonaError):
+    """Exception raised for workspace-related errors."""
+    pass
+
+
+class WorkspaceInitializationError(WorkspaceError):
+    """Exception raised when workspace initialization fails."""
+    pass
+
+
+class WorkspaceNotFoundError(WorkspaceError):
+    """Exception raised when a workspace is not found."""
+    pass
+
+
+class WorkspaceQuotaExceededError(WorkspaceError):
+    """Exception raised when CPU quota is exceeded."""
+    pass
+
+
+class FileSystemError(DaytonaError):
+    """Exception raised for filesystem-related errors."""
+    pass
+
+
+class FileNotAccessibleError(FileSystemError):
+    """Exception raised when a file cannot be accessed."""
+    pass
+
+
+class FileTooLargeError(FileSystemError):
+    """Exception raised when a file is too large to process."""
+    pass
+
+
+class CommandExecutionError(DaytonaError):
+    """Exception raised when a command execution fails."""
+    pass
+
+
+class ConfigurationError(DaytonaError):
+    """Exception raised for configuration-related errors."""
+    pass
+
+
+class NetworkError(DaytonaError):
+    """Exception raised for network-related errors."""
+    pass
+
 # Initialize mimetypes
 mimetypes.init()
 
@@ -72,23 +128,50 @@ class Config:
     """Server configuration class that loads environment variables for MCP Daytona setup"""
     def __init__(self):
         # Load environment variables from .env file
-        load_dotenv()
+        try:
+            load_dotenv()
+            logger = logging.getLogger("daytona-interpreter")
+            
+            # Required API key for authentication
+            self.api_key = os.getenv('MCP_DAYTONA_API_KEY')
+            if not self.api_key:
+                raise ConfigurationError("MCP_DAYTONA_API_KEY environment variable is required")
+            else:
+                logger.info("MCP_DAYTONA_API_KEY loaded successfully.")
 
-        # Required API key for authentication
-        self.api_key = os.getenv('MCP_DAYTONA_API_KEY')
-        if not self.api_key:
-            raise ValueError("MCP_DAYTONA_API_KEY environment variable is required")
-        else:
-            logging.getLogger("daytona-interpreter").info("MCP_DAYTONA_API_KEY loaded successfully.")
+            # Optional configuration with defaults
+            self.server_url = os.getenv('MCP_DAYTONA_SERVER_URL', 'https://app.daytona.io/api')
+            
+            # Validate server URL format
+            if not self.server_url.startswith(('http://', 'https://')):
+                logger.warning(f"Invalid server URL format: {self.server_url}, adding https://")
+                self.server_url = f"https://{self.server_url}"
+            
+            self.target = os.getenv('MCP_DAYTONA_TARGET', 'eu')
+            
+            # Validate and parse timeout
+            timeout_str = os.getenv('MCP_DAYTONA_TIMEOUT', '180.0')
+            try:
+                self.timeout = float(timeout_str)
+                if self.timeout <= 0:
+                    logger.warning(f"Invalid timeout value: {self.timeout}, using default of 180.0")
+                    self.timeout = 180.0
+            except ValueError:
+                logger.warning(f"Invalid timeout format: {timeout_str}, using default of 180.0")
+                self.timeout = 180.0
+                
+            self.verify_ssl = os.getenv('MCP_VERIFY_SSL', 'false').lower() == 'true'
 
-        # Optional configuration with defaults
-        self.server_url = os.getenv('MCP_DAYTONA_SERVER_URL', 'https://app.daytona.io/api')  # Updated URL
-        self.target = os.getenv('MCP_DAYTONA_TARGET', 'eu')  # Default to EU based on logs
-        self.timeout = float(os.getenv('MCP_DAYTONA_TIMEOUT', '180.0'))
-        self.verify_ssl = os.getenv('MCP_VERIFY_SSL', 'false').lower() == 'true'
-
-        # Optional debug logging
-        self._log_config()
+            # Optional debug logging
+            self._log_config()
+            
+        except ConfigurationError:
+            # Re-raise ConfigurationError exceptions
+            raise
+        except Exception as e:
+            # Convert other exceptions to ConfigurationError with context
+            logger.error(f"Configuration initialization error: {e}", exc_info=True)
+            raise ConfigurationError(f"Failed to initialize configuration: {str(e)}") from e
 
     def _log_config(self) -> None:
         """Logs the current configuration settings excluding sensitive information."""
@@ -332,6 +415,21 @@ class DaytonaInterpreter:
                     # Add extra debug logging
                     self.logger.info(f"Using file_download with: path={file_path}, max_size={max_size_mb}MB, option={download_option}, chunk_size={chunk_size_kb}KB")
 
+                    # Validate inputs before calling file_downloader
+                    if max_size_mb is not None and not isinstance(max_size_mb, (int, float)):
+                        try:
+                            max_size_mb = float(max_size_mb)
+                        except (ValueError, TypeError):
+                            self.logger.warning(f"Invalid max_size_mb value: {max_size_mb}, using default of 5.0")
+                            max_size_mb = 5.0
+                            
+                    if chunk_size_kb is not None and not isinstance(chunk_size_kb, (int, float)):
+                        try:
+                            chunk_size_kb = int(chunk_size_kb)
+                        except (ValueError, TypeError):
+                            self.logger.warning(f"Invalid chunk_size_kb value: {chunk_size_kb}, using default of 100")
+                            chunk_size_kb = 100
+
                     # Call our improved file_downloader function
                     result = file_downloader(
                         path=file_path,
@@ -352,8 +450,8 @@ class DaytonaInterpreter:
                             "- convert_to_text: Try to convert file to plain text\n"
                             "- compress_file: Compress the file before downloading\n"
                             "- force_download: Download the entire file anyway\n\n"
-                            "To proceed, call file_downloader again with the desired option, for example:\n"
-                            f"file_downloader(file_path='{file_path}', download_option='download_partial')"
+                            "To proceed, call file_download again with the desired option, for example:\n"
+                            f"file_download(file_path='{file_path}', download_option='download_partial')"
                         )
                         return [TextContent(type="text", text=options_text)]
 
@@ -416,18 +514,49 @@ class DaytonaInterpreter:
                         if content:
                             return await self.process_file_content(file_path, content)
 
-                    # For errors, return the error message
+                    # For errors, return the error message with specific error handling based on error type
                     if not result.get("success"):
-                        error_msg = f"Error downloading file: {result.get('error', 'Unknown error')}"
-                        self.logger.error(error_msg)
-                        return [TextContent(type="text", text=error_msg)]
+                        error_msg = result.get('error', 'Unknown error')
+                        error_type = result.get('error_type', 'UnknownError')
+                        
+                        # Format user-friendly error messages based on error type
+                        if error_type == "FileNotAccessibleError":
+                            friendly_msg = f"File not accessible: {error_msg}. Please check if the file exists and you have permission to access it."
+                        elif error_type == "FileTooLargeError":
+                            friendly_msg = f"File too large: {error_msg}. Try downloading with a specific option like 'download_partial'."
+                        elif error_type == "WorkspaceQuotaExceededError":
+                            friendly_msg = f"Resource limit exceeded: {error_msg}. Please try again later or contact support."
+                        elif error_type == "NetworkError":
+                            friendly_msg = f"Network error: {error_msg}. Please check your connection and try again."
+                        elif error_type in ["FileSystemError", "WorkspaceError", "WorkspaceInitializationError"]:
+                            friendly_msg = f"System error ({error_type}): {error_msg}. Please try again or contact support if the issue persists."
+                        else:
+                            friendly_msg = f"Error downloading file: {error_msg}"
+                            
+                        self.logger.error(f"Error type: {error_type}, Message: {error_msg}")
+                        return [TextContent(type="text", text=friendly_msg)]
 
                     # Fallback for unexpected results
                     return [TextContent(type="text", text=f"Unexpected download result: {json.dumps(result, default=str)}")]
                 except Exception as e:
                     self.logger.error(f"Error in file_downloader: {e}", exc_info=True)
+                    
+                    # Classify exception type for better error messages
+                    if isinstance(e, FileNotAccessibleError):
+                        error_msg = f"File not accessible: {str(e)}. Please check if the file exists and you have permission to access it."
+                    elif isinstance(e, FileTooLargeError):
+                        error_msg = f"File too large: {str(e)}. Try downloading with a specific option."
+                    elif isinstance(e, FileSystemError):
+                        error_msg = f"File system error: {str(e)}. Please try again."
+                    elif isinstance(e, NetworkError):
+                        error_msg = f"Network error: {str(e)}. Please check your connection and try again."
+                    elif isinstance(e, WorkspaceError):
+                        error_msg = f"Workspace error: {str(e)}. Please try again later."
+                    else:
+                        error_msg = f"Error downloading file: {str(e)}"
+                        
                     # Return error as text
-                    return [TextContent(type="text", text=f"Error downloading file: {str(e)}")]
+                    return [TextContent(type="text", text=error_msg)]
 
 
             elif name == "git_clone":
@@ -610,6 +739,12 @@ class DaytonaInterpreter:
 
         IMPORTANT: This method enforces a single workspace per session by using
         a tracking file to store and retrieve the active workspace ID.
+        
+        Raises:
+            WorkspaceInitializationError: If workspace initialization fails
+            WorkspaceQuotaExceededError: If CPU quota is exceeded
+            WorkspaceNotFoundError: If a referenced workspace cannot be found
+            NetworkError: If network-related errors occur
         """
         # First check if this instance already has a workspace
         if self.workspace:
@@ -629,32 +764,49 @@ class DaytonaInterpreter:
                     try:
                         self.logger.info(f"Found active workspace ID: {workspace_id} (process {os.getpid()})")
                         # Try to get the workspace from Daytona
-                        workspaces = self.daytona.list()
+                        try:
+                            workspaces = self.daytona.list()
+                        except Exception as list_err:
+                            if "Unauthorized" in str(list_err) or "401" in str(list_err):
+                                raise NetworkError("Authentication failed when listing workspaces. Please check your API key.")
+                            elif "Connection" in str(list_err) or "Timeout" in str(list_err):
+                                raise NetworkError(f"Network error when listing workspaces: {str(list_err)}")
+                            else:
+                                raise WorkspaceError(f"Failed to list workspaces: {str(list_err)}")
+                                
                         for workspace in workspaces:
                             if workspace.id == workspace_id:
                                 # Reuse the existing workspace
                                 self.workspace = workspace
                                 # Initialize filesystem for this workspace
-                                # Create the filesystem client
-                                # The API has changed in daytona-sdk 0.10.2
-                                # We need to create the FileSystem instance with proper parameters
-                                # In SDK 0.10.2, toolbox_api is available directly on the Daytona instance
-                                toolbox_api = self.daytona.toolbox_api
+                                try:
+                                    # The API has changed in daytona-sdk 0.10.2
+                                    # We need to create the FileSystem instance with proper parameters
+                                    # In SDK 0.10.2, toolbox_api is available directly on the Daytona instance
+                                    toolbox_api = self.daytona.toolbox_api
 
-                                # Create filesystem with the workspace instance and toolbox_api
-                                self.filesystem = FileSystem(instance=self.workspace, toolbox_api=toolbox_api)
-                                self.logger.info(f"Reusing existing workspace ID: {workspace_id}")
-                                return
+                                    # Create filesystem with the workspace instance and toolbox_api
+                                    self.filesystem = FileSystem(instance=self.workspace, toolbox_api=toolbox_api)
+                                    self.logger.info(f"Reusing existing workspace ID: {workspace_id}")
+                                    return
+                                except Exception as fs_err:
+                                    self.logger.error(f"Failed to initialize filesystem for workspace {workspace_id}: {fs_err}")
+                                    raise FileSystemError(f"Failed to initialize filesystem: {str(fs_err)}")
 
                         # If we get here, the workspace in the file wasn't found in Daytona
                         self.logger.warning(f"Workspace {workspace_id} not found in Daytona, clearing tracking")
                         # Use filesystem if available for this instance
                         clear_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
+                        raise WorkspaceNotFoundError(f"Workspace {workspace_id} not found in Daytona")
+                    except (WorkspaceNotFoundError, FileSystemError, NetworkError, WorkspaceError) as specific_error:
+                        # Clear tracking file to prevent future issues
+                        clear_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
+                        raise
                     except Exception as e:
                         self.logger.warning(f"Error fetching workspace: {e}")
                         # Clear tracking file to prevent future issues
-                        # Use filesystem if available for this instance
                         clear_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
+                        raise WorkspaceError(f"Error fetching workspace: {str(e)}")
 
                 # If we get here, we need to create a new workspace
                 if os.path.exists(WORKSPACE_TRACKING_FILE):
@@ -665,7 +817,6 @@ class DaytonaInterpreter:
                 # Only create a new workspace if we don't have a valid tracking file
                 self.logger.info(f"Creating a new Daytona workspace (process {os.getpid()})")
                 params = CreateWorkspaceParams(
-                    #image="daytonaio/ai-test:0.2.3",
                     language="python",
                     os_user="workspace"  # Fix: use os_user instead of user parameter
                     # Additional parameters can be defined here
@@ -674,7 +825,18 @@ class DaytonaInterpreter:
                 # Check if we have any existing workspaces and terminate them if needed
                 try:
                     # List existing workspaces to avoid creating too many
-                    workspaces = self.daytona.list()
+                    try:
+                        workspaces = self.daytona.list()
+                    except Exception as list_err:
+                        if "Unauthorized" in str(list_err) or "401" in str(list_err):
+                            raise NetworkError("Authentication failed when listing workspaces. Please check your API key.")
+                        elif "Connection" in str(list_err) or "Timeout" in str(list_err):
+                            raise NetworkError(f"Network error when listing workspaces: {str(list_err)}")
+                        else:
+                            self.logger.warning(f"Error listing workspaces: {list_err}")
+                            # Continue without failing - we'll attempt creation anyway
+                            workspaces = []
+                    
                     if len(workspaces) > 0:
                         self.logger.info(f"Found {len(workspaces)} existing workspaces, removing oldest")
                         # Sort by creation time (oldest first) if available
@@ -694,30 +856,39 @@ class DaytonaInterpreter:
                 max_retries = 3
                 retry_count = 0
                 retry_delay = 2.0
+                last_error = None
 
                 while retry_count < max_retries:
                     try:
                         self.workspace = self.daytona.create(params)
                         workspace_id = self.workspace.id
                         # Initialize filesystem for this workspace
-                        # The API has changed in daytona-sdk 0.10.2
-                        # We need to create the FileSystem instance with proper parameters
-                        # In SDK 0.10.2, toolbox_api is available directly on the Daytona instance
-                        toolbox_api = self.daytona.toolbox_api
+                        try:
+                            toolbox_api = self.daytona.toolbox_api
+                            self.filesystem = FileSystem(instance=self.workspace, toolbox_api=toolbox_api)
+                            self.logger.info(f"Created Workspace ID: {workspace_id}")
 
-                        # Create filesystem with the workspace instance and toolbox_api
-                        self.filesystem = FileSystem(instance=self.workspace, toolbox_api=toolbox_api)
-                        self.logger.info(f"Created Workspace ID: {workspace_id}")
-
-                        # Save workspace ID to tracking file for other processes to reuse
-                        # This must happen BEFORE releasing the lock to prevent race conditions
-                        set_active_workspace(workspace_id, self.filesystem)
-                        self.logger.info(f"Registered workspace ID {workspace_id} in tracking file")
-                        break
+                            # Save workspace ID to tracking file for other processes to reuse
+                            # This must happen BEFORE releasing the lock to prevent race conditions
+                            set_active_workspace(workspace_id, self.filesystem)
+                            self.logger.info(f"Registered workspace ID {workspace_id} in tracking file")
+                            break
+                        except Exception as fs_err:
+                            self.logger.error(f"Failed to initialize filesystem for workspace {workspace_id}: {fs_err}")
+                            # Try to clean up the workspace we just created
+                            try:
+                                self.daytona.remove(self.workspace)
+                                self.logger.info(f"Cleaned up workspace {workspace_id} after filesystem initialization failed")
+                            except Exception as cleanup_err:
+                                self.logger.warning(f"Failed to clean up workspace after error: {cleanup_err}")
+                            
+                            raise FileSystemError(f"Failed to initialize filesystem: {str(fs_err)}")
                     except Exception as e:
-                        # Check for specific error types
+                        last_error = e
                         error_str = str(e)
-                        if "Total CPU quota exceeded" in error_str:
+                        
+                        # Handle quota exceeded errors
+                        if "Total CPU quota exceeded" in error_str or "quota" in error_str.lower():
                             # Extract the quota information if available
                             quota_info = ""
                             try:
@@ -738,17 +909,34 @@ class DaytonaInterpreter:
                             )
                             self.logger.error(error_message)
                             # Don't retry on quota errors
-                            raise Exception(error_message) from e
+                            raise WorkspaceQuotaExceededError(error_message)
+                        
+                        # Handle network-related errors
+                        elif "Connection" in error_str or "Timeout" in error_str:
+                            self.logger.warning(f"Network error during workspace creation: {e}")
+                            if retry_count >= max_retries - 1:
+                                raise NetworkError(f"Network error during workspace creation: {str(e)}")
+                        
+                        # Handle authentication errors
+                        elif "Unauthorized" in error_str or "401" in str(e):
+                            raise NetworkError("Authentication failed when creating workspace. Please check your API key.")
 
                         retry_count += 1
                         if retry_count >= max_retries:
-                            raise
+                            self.logger.error(f"Workspace creation failed after {max_retries} attempts")
+                            raise WorkspaceInitializationError(f"Failed to create workspace after {max_retries} attempts: {str(last_error)}")
+                            
                         self.logger.warning(f"Workspace creation attempt {retry_count} failed: {e}, retrying in {retry_delay}s")
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 1.5  # Exponential backoff
+                        
+        except (WorkspaceInitializationError, WorkspaceQuotaExceededError, 
+                WorkspaceNotFoundError, FileSystemError, NetworkError, WorkspaceError):
+            # Re-raise specific exceptions without wrapping
+            raise
         except Exception as e:
             self.logger.error(f"Failed to create/find workspace: {e}", exc_info=True)
-            raise
+            raise WorkspaceInitializationError(f"Failed to create/find workspace: {str(e)}")
 
     async def execute_python_code(self, code: str) -> str:
         """
@@ -1085,12 +1273,27 @@ except Exception:
         """
         Execute a shell command in the Daytona workspace using the SDK.
         Returns the execution result as a JSON string.
+        
+        Args:
+            command: The shell command to execute
+            
+        Returns:
+            JSON string containing stdout, stderr, and exit_code
+            
+        Raises:
+            WorkspaceError: If workspace is not initialized
+            CommandExecutionError: If command execution fails
+            NetworkError: If connection issues occur during execution
         """
         if not self.workspace:
             self.logger.error("Workspace is not initialized.")
-            raise RuntimeError("Workspace is not initialized.")
+            raise WorkspaceError("Workspace is not initialized.")
 
         try:
+            # Validate command input
+            if not command or not isinstance(command, str):
+                raise ValueError("Command must be a non-empty string")
+                
             # For commands containing && or cd, execute them as a single shell command
             if '&&' in command or command.strip().startswith('cd '):
                 # Wrap the entire command in /bin/sh -c
@@ -1101,7 +1304,6 @@ except Exception:
 
             self.logger.debug(f"Executing command: {command}")
 
-            # Add timeout handling for long-running commands
             try:
                 # Execute shell command using the SDK
                 response: ExecuteResponse = self.workspace.process.exec(command)
@@ -1116,6 +1318,10 @@ except Exception:
                 log_output = result[:500] + "..." if len(result) > 500 else result
                 self.logger.debug(f"Command Output (truncated):\n{log_output}")
 
+                # Check for high exit code (error conditions)
+                if exit_code > 0:
+                    self.logger.warning(f"Command exited with non-zero status: {exit_code}")
+                
                 # Return the execution output as JSON
                 return json.dumps({
                     "stdout": result,
@@ -1123,20 +1329,43 @@ except Exception:
                     "exit_code": exit_code
                 }, indent=2)
             except Exception as e:
+                error_str = str(e)
                 self.logger.error(f"Error during command execution: {e}", exc_info=True)
-                raise
-        except Exception as e:
-            self.logger.error(f"Error executing command: {e}", exc_info=True)
+                
+                # Classify error types for better handling
+                if "Connection" in error_str or "Timeout" in error_str:
+                    raise NetworkError(f"Network error during command execution: {error_str}")
+                elif "Unauthorized" in error_str or "401" in str(e):
+                    raise NetworkError("Authentication failed during command execution. Please check your API key.")
+                else:
+                    raise CommandExecutionError(f"Command execution failed: {error_str}")
+        except (NetworkError, CommandExecutionError, WorkspaceError, ValueError) as specific_error:
+            # For specific error types, return formatted output with appropriate error info
+            self.logger.error(f"Command execution error: {specific_error}")
             return json.dumps({
                 "stdout": "",
-                "stderr": str(e),
-                "exit_code": -1
+                "stderr": str(specific_error),
+                "exit_code": -1,
+                "error_type": specific_error.__class__.__name__
+            }, indent=2)
+        except Exception as e:
+            # For unexpected errors, wrap in CommandExecutionError but preserve original
+            self.logger.error(f"Unexpected error executing command: {e}", exc_info=True)
+            error = CommandExecutionError(f"Unexpected error: {str(e)}")
+            return json.dumps({
+                "stdout": "",
+                "stderr": str(error),
+                "exit_code": -1,
+                "error_type": "CommandExecutionError"
             }, indent=2)
 
     async def cleanup_workspace(self) -> None:
         """
         Clean up the Daytona workspace by removing it using the SDK.
         Uses a file lock to coordinate between processes.
+        
+        This method handles workspace cleanup with error recovery and ensures
+        proper coordination between multiple processes accessing the same workspace.
         """
         if not self.workspace:
             self.logger.debug("No workspace to clean up for this instance")
@@ -1145,32 +1374,86 @@ except Exception:
         # Store workspace ID for logging
         workspace_id = self.workspace.id
 
-        # Use file lock to ensure only one process cleans up
-        with FileLock(WORKSPACE_LOCK_FILE):
-            # Check if this instance's workspace is the active workspace
-            active_id, _ = get_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
-            if active_id and active_id == workspace_id:
-                try:
-                    # Log that we're about to clean up
+        try:
+            # Use file lock to ensure only one process cleans up
+            with FileLock(WORKSPACE_LOCK_FILE):
+                # Check if this instance's workspace is the active workspace
+                active_id, _ = get_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
+                if active_id and active_id == workspace_id:
                     self.logger.info(f"Starting cleanup for workspace ID: {workspace_id}")
-
-                    # Remove the workspace
-                    self.daytona.remove(self.workspace)
-
-                    # Clear tracking file so other processes know it's gone
-                    clear_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
-
-                    # Log success
-                    self.logger.info(f"Successfully removed Workspace ID: {workspace_id}")
-                except Exception as e:
-                    # Log error but don't crash
-                    self.logger.error(f"Failed to remove workspace: {e}", exc_info=True)
-            else:
-                self.logger.info(f"This process doesn't own the active workspace, skipping cleanup")
-
-        # Always clear this instance's references
-        self.workspace = None
-        self.filesystem = None
+                    
+                    # Attempt to remove the workspace with retry mechanism
+                    max_retries = 2
+                    retry_count = 0
+                    retry_delay = 1.0
+                    success = False
+                    last_error = None
+                    
+                    while retry_count < max_retries and not success:
+                        try:
+                            # Remove the workspace
+                            self.daytona.remove(self.workspace)
+                            success = True
+                            
+                            # Clear tracking file so other processes know it's gone
+                            clear_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
+                            
+                            # Log success
+                            self.logger.info(f"Successfully removed Workspace ID: {workspace_id}")
+                        except Exception as e:
+                            last_error = e
+                            retry_count += 1
+                            error_str = str(e)
+                            
+                            # Handle different error cases
+                            if "not found" in error_str.lower() or "404" in error_str:
+                                # Workspace already removed, just clear tracking
+                                self.logger.info(f"Workspace {workspace_id} already removed, clearing tracking")
+                                clear_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
+                                success = True
+                                break
+                            elif "Connection" in error_str or "Timeout" in error_str:
+                                # Network errors might be temporary, retry
+                                self.logger.warning(f"Network error during workspace removal: {e}, retrying...")
+                            elif "Unauthorized" in error_str or "401" in str(e):
+                                # Auth errors won't be fixed by retry
+                                self.logger.error(f"Authentication error during workspace removal: {e}")
+                                break
+                            else:
+                                self.logger.warning(f"Failed to remove workspace (attempt {retry_count}): {e}")
+                            
+                            if retry_count < max_retries:
+                                await asyncio.sleep(retry_delay)
+                                retry_delay *= 1.5
+                                
+                    # If we've exhausted retries and still failed, log but don't raise
+                    if not success and last_error:
+                        self.logger.error(f"Failed to remove workspace after {max_retries} attempts: {last_error}")
+                        
+                        # Last-ditch effort: at least clear tracking file
+                        try:
+                            clear_active_workspace(self.filesystem if hasattr(self, 'filesystem') else None)
+                            self.logger.info("Cleared workspace tracking file despite removal failure")
+                        except Exception as tracking_error:
+                            self.logger.error(f"Failed to clear tracking file: {tracking_error}")
+                else:
+                    self.logger.info(f"This process doesn't own the active workspace, skipping cleanup")
+        except Exception as e:
+            # Log lock acquisition errors but don't crash
+            self.logger.error(f"Error during workspace cleanup lock acquisition: {e}", exc_info=True)
+            
+            # Try cleanup without lock as last resort
+            try:
+                self.logger.warning("Attempting cleanup without lock as fallback")
+                self.daytona.remove(self.workspace)
+                self.logger.info(f"Successfully removed Workspace ID: {workspace_id} without lock")
+            except Exception as fallback_error:
+                self.logger.error(f"Fallback cleanup also failed: {fallback_error}")
+        finally:
+            # Always clear this instance's references regardless of cleanup success
+            self.workspace = None
+            self.filesystem = None
+            self.logger.debug("Cleared workspace and filesystem references")
 
     async def process_file_content(self, file_path: str, file_content: bytes) -> List[Union[TextContent, ImageContent, EmbeddedResource]]:
         """
@@ -2125,11 +2408,34 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
 
     Returns:
         Dict containing file content and metadata or download options
+        
+    Raises:
+        FileNotAccessibleError: When the file cannot be accessed
+        FileTooLargeError: When file exceeds size limits without download option
+        FileSystemError: For filesystem-related errors
+        NetworkError: For network-related errors
     """
+    logger = logging.getLogger("daytona-interpreter")
+    logger.info(f"Downloading file: {path}, max_size: {max_size_mb}MB, option: {download_option}")
+    
+    workspace = None
+    filesystem = None
+    needs_cleanup = False
+    daytona = None
+    
     try:
-        logger = logging.getLogger("daytona-interpreter")
-        logger.info(f"Downloading file: {path}, max_size: {max_size_mb}MB, option: {download_option}")
-
+        # Validate inputs
+        if not path:
+            raise ValueError("File path is required")
+        if max_size_mb <= 0:
+            logger.warning(f"Invalid max_size_mb value: {max_size_mb}, using default of 5.0")
+            max_size_mb = 5.0
+        if chunk_size_kb <= 0:
+            logger.warning(f"Invalid chunk_size_kb value: {chunk_size_kb}, using default of 100")
+            chunk_size_kb = 100
+        if download_option and download_option not in ["download_partial", "convert_to_text", "compress_file", "force_download"]:
+            logger.warning(f"Unrecognized download option: {download_option}")
+            
         # Initialize Daytona using the current interpreter's instance if possible
         global _interpreter_instance
         if _interpreter_instance and _interpreter_instance.workspace and _interpreter_instance.filesystem:
@@ -2138,17 +2444,47 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
             filesystem = _interpreter_instance.filesystem
             needs_cleanup = False
         else:
-            logger.info("Creating new Daytona workspace")
-            daytona = Daytona()
-            workspace = daytona.create()
-            filesystem = workspace.fs
-            needs_cleanup = True
+            try:
+                logger.info("Creating new Daytona workspace")
+                daytona = Daytona()
+                try:
+                    workspace = daytona.create()
+                    filesystem = workspace.fs
+                    needs_cleanup = True
+                except Exception as create_err:
+                    error_str = str(create_err)
+                    if "Total CPU quota exceeded" in error_str or "quota" in error_str.lower():
+                        raise WorkspaceQuotaExceededError(f"CPU quota exceeded when creating workspace for file download: {error_str}")
+                    elif "Connection" in error_str or "Timeout" in error_str:
+                        raise NetworkError(f"Network error when creating workspace for file download: {error_str}")
+                    elif "Unauthorized" in error_str or "401" in str(create_err):
+                        raise NetworkError("Authentication failed when creating workspace for file download")
+                    else:
+                        raise WorkspaceInitializationError(f"Failed to create workspace for file download: {error_str}")
+            except (WorkspaceQuotaExceededError, NetworkError, WorkspaceInitializationError) as specific_error:
+                # Re-raise specific exceptions 
+                logger.error(f"Error creating workspace: {specific_error}")
+                return {
+                    "success": False,
+                    "error": str(specific_error),
+                    "error_type": specific_error.__class__.__name__,
+                    "file_path": path
+                }
 
         # First check if file exists and get file info using Daytona FileSystem
         try:
             # Use filesystem.get_file_info to check if file exists and get size information
-            file_info = filesystem.get_file_info(path)
-            logger.info(f"File exists: {path}")
+            try:
+                file_info = filesystem.get_file_info(path)
+                logger.info(f"File exists: {path}")
+            except Exception as fs_err:
+                if "not found" in str(fs_err).lower() or "not exist" in str(fs_err).lower():
+                    raise FileNotAccessibleError(f"File not found: {path}")
+                elif "permission" in str(fs_err).lower():
+                    raise FileNotAccessibleError(f"Permission denied accessing file: {path}")
+                else:
+                    logger.warning(f"Error accessing file with FileSystem API: {fs_err}")
+                    raise FileSystemError(f"Error accessing file with FileSystem API: {fs_err}")
             
             # Get additional information with process.exec for backward compatibility
             try:
@@ -2174,25 +2510,45 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
             
             logger.info(f"File info: {file_info}")
             
-        except Exception as e:
-            logger.warning(f"Error checking file with FileSystem: {e}")
+        except (FileNotAccessibleError, FileSystemError) as specific_error:
+            # First try with process.exec as fallback
+            logger.warning(f"Using process.exec fallback for file check: {specific_error}")
             
-            # Fall back to process.exec method
             try:
                 # Check if file exists
                 response = workspace.process.exec(f"test -f {shlex.quote(path)} && echo 'exists' || echo 'not exists'")
                 if "exists" not in str(response.result):
-                    raise FileNotFoundError(f"File not found: {path}")
+                    if needs_cleanup and daytona and workspace:
+                        try:
+                            daytona.remove(workspace)
+                        except Exception as cleanup_err:
+                            logger.warning(f"Error cleaning up workspace: {cleanup_err}")
+                    
+                    raise FileNotAccessibleError(f"File not found: {path}")
                     
                 # Get file size using stat command
-                size_cmd = f"stat -f %z {shlex.quote(path)}"
-                size_result = workspace.process.exec(size_cmd)
-                file_size = int(str(size_result.result).strip())
+                try:
+                    size_cmd = f"stat -f %z {shlex.quote(path)}"
+                    size_result = workspace.process.exec(size_cmd)
+                    file_size = int(str(size_result.result).strip())
+                except Exception:
+                    # Try Linux stat format as fallback
+                    try:
+                        size_cmd = f"stat -c %s {shlex.quote(path)}"
+                        size_result = workspace.process.exec(size_cmd)
+                        file_size = int(str(size_result.result).strip())
+                    except Exception as stat_err:
+                        logger.error(f"Failed to get file size: {stat_err}")
+                        raise FileSystemError(f"Failed to get file size: {stat_err}")
                 
                 # Get mime type
-                mime_cmd = f"file --mime-type -b {shlex.quote(path)}"
-                mime_result = workspace.process.exec(mime_cmd)
-                mime_type = str(mime_result.result).strip()
+                try:
+                    mime_cmd = f"file --mime-type -b {shlex.quote(path)}"
+                    mime_result = workspace.process.exec(mime_cmd)
+                    mime_type = str(mime_result.result).strip()
+                except Exception:
+                    # Default mime type based on extension
+                    mime_type = get_content_type(path)
                 
                 file_info = {
                     "name": os.path.basename(path),
@@ -2200,9 +2556,37 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                     "mime_type": mime_type
                 }
                 logger.info(f"File info (via exec): {file_info}")
+            except (FileNotAccessibleError, FileSystemError) as exec_error:
+                # Cleanup on error
+                if needs_cleanup and daytona and workspace:
+                    try:
+                        daytona.remove(workspace)
+                    except Exception as cleanup_err:
+                        logger.warning(f"Error cleaning up workspace: {cleanup_err}")
+                        
+                # Re-raise with more context
+                return {
+                    "success": False,
+                    "error": str(exec_error),
+                    "error_type": exec_error.__class__.__name__,
+                    "file_path": path
+                }
             except Exception as e:
                 logger.error(f"File does not exist or cannot be accessed: {e}")
-                raise FileNotFoundError(f"File not found or inaccessible: {path}")
+                
+                # Cleanup on error
+                if needs_cleanup and daytona and workspace:
+                    try:
+                        daytona.remove(workspace)
+                    except Exception as cleanup_err:
+                        logger.warning(f"Error cleaning up workspace: {cleanup_err}")
+                
+                return {
+                    "success": False,
+                    "error": f"File not found or inaccessible: {path}",
+                    "error_type": "FileNotAccessibleError",
+                    "file_path": path
+                }
 
         # Calculate size in MB
         size_mb = file_info["size"] / (1024 * 1024) if isinstance(file_info, dict) else file_info.size / (1024 * 1024)
@@ -2211,6 +2595,7 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
         # If file is too large and no download option is specified, offer options
         if size_mb > max_size_mb and download_option is None:
             options = {
+                "success": True,
                 "file_too_large": True,
                 "file_size_mb": round(size_mb, 2),
                 "max_size_mb": max_size_mb,
@@ -2227,7 +2612,7 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
             }
 
             # Clean up if needed
-            if needs_cleanup:
+            if needs_cleanup and daytona and workspace:
                 try:
                     daytona.remove(workspace)
                     logger.info("Cleaned up temporary workspace")
@@ -2248,40 +2633,59 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                     # we'll use process.exec to create a temporary file with the chunk
                     temp_chunk_path = f"/tmp/chunk_{uuid.uuid4()}.tmp"
                     
-                    # Create the chunk
-                    workspace.process.exec(f"head -c {chunk_size_bytes} {shlex.quote(path)} > {temp_chunk_path}")
-                    
-                    # Use filesystem to download the chunk
-                    content = filesystem.download_file(temp_chunk_path)
-                    
-                    # Remove temp file
-                    workspace.process.exec(f"rm {temp_chunk_path}")
-                    
-                except Exception as e:
-                    logger.warning(f"Error using filesystem for partial download: {e}, falling back to process.exec")
-                    # Fallback to direct base64 encoding
-                    head_cmd = f"head -c {chunk_size_bytes} {shlex.quote(path)} | base64"
-                    head_result = workspace.process.exec(head_cmd)
-                    
-                    # Decode base64 content
-                    content_b64 = str(head_result.result).strip()
-                    content = base64.b64decode(content_b64)
+                    try:
+                        # Create the chunk
+                        workspace.process.exec(f"head -c {chunk_size_bytes} {shlex.quote(path)} > {temp_chunk_path}")
+                        
+                        # Use filesystem to download the chunk
+                        content = filesystem.download_file(temp_chunk_path)
+                        
+                        # Remove temp file
+                        workspace.process.exec(f"rm {temp_chunk_path}")
+                    except Exception as e:
+                        logger.warning(f"Error using filesystem for partial download: {e}, falling back to process.exec")
+                        # Fallback to direct base64 encoding
+                        head_cmd = f"head -c {chunk_size_bytes} {shlex.quote(path)} | base64"
+                        head_result = workspace.process.exec(head_cmd)
+                        
+                        # Decode base64 content
+                        content_b64 = str(head_result.result).strip()
+                        content = base64.b64decode(content_b64)
 
-                # Clean up if needed
-                if needs_cleanup:
-                    daytona.remove(workspace)
+                    # Clean up if needed
+                    if needs_cleanup and daytona and workspace:
+                        try:
+                            daytona.remove(workspace)
+                        except Exception as cleanup_err:
+                            logger.warning(f"Error cleaning up workspace: {cleanup_err}")
 
-                return {
-                    "success": True,
-                    "filename": os.path.basename(path),
-                    "content_type": get_content_type(path),
-                    "size": file_info["size"] if isinstance(file_info, dict) else file_info.size,
-                    "content": content,
-                    "partial": True,
-                    "downloaded_bytes": len(content),
-                    "total_bytes": file_info["size"] if isinstance(file_info, dict) else file_info.size,
-                    "message": f"Downloaded first {chunk_size_kb}KB of file."
-                }
+                    return {
+                        "success": True,
+                        "filename": os.path.basename(path),
+                        "content_type": get_content_type(path),
+                        "size": file_info["size"] if isinstance(file_info, dict) else file_info.size,
+                        "content": content,
+                        "partial": True,
+                        "downloaded_bytes": len(content),
+                        "total_bytes": file_info["size"] if isinstance(file_info, dict) else file_info.size,
+                        "message": f"Downloaded first {chunk_size_kb}KB of file."
+                    }
+                except Exception as partial_err:
+                    logger.error(f"Error downloading partial file: {partial_err}")
+                    
+                    # Cleanup on error
+                    if needs_cleanup and daytona and workspace:
+                        try:
+                            daytona.remove(workspace)
+                        except Exception as cleanup_err:
+                            logger.warning(f"Error cleaning up workspace: {cleanup_err}")
+                    
+                    return {
+                        "success": False,
+                        "error": f"Error downloading partial file: {str(partial_err)}",
+                        "error_type": "FileSystemError" if isinstance(partial_err, FileSystemError) else "DownloadError",
+                        "file_path": path
+                    }
 
             elif download_option == "convert_to_text":
                 # Try to convert file to text (works best for PDFs, code files, etc.)
@@ -2299,8 +2703,11 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                         content = str(text_result.result).encode('utf-8')
 
                     # Clean up if needed
-                    if needs_cleanup:
-                        daytona.remove(workspace)
+                    if needs_cleanup and daytona and workspace:
+                        try:
+                            daytona.remove(workspace)
+                        except Exception as cleanup_err:
+                            logger.warning(f"Error cleaning up workspace: {cleanup_err}")
 
                     return {
                         "success": True,
@@ -2312,9 +2719,22 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                         "original_size": file_info["size"] if isinstance(file_info, dict) else file_info.size,
                         "message": "File was converted to text format."
                     }
-                except Exception as e:
-                    logger.error(f"Error converting to text: {e}")
-                    raise
+                except Exception as convert_err:
+                    logger.error(f"Error converting to text: {convert_err}")
+                    
+                    # Cleanup on error
+                    if needs_cleanup and daytona and workspace:
+                        try:
+                            daytona.remove(workspace)
+                        except Exception as cleanup_err:
+                            logger.warning(f"Error cleaning up workspace: {cleanup_err}")
+                    
+                    return {
+                        "success": False,
+                        "error": f"Error converting file to text: {str(convert_err)}",
+                        "error_type": "FileSystemError" if isinstance(convert_err, FileSystemError) else "ConversionError",
+                        "file_path": path
+                    }
 
             elif download_option == "compress_file":
                 # Compress the file before downloading
@@ -2324,9 +2744,15 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                     workspace.process.exec(compress_cmd)
 
                     # Get compressed file size
-                    size_cmd = f"stat -f %z {temp_path}"
-                    size_result = workspace.process.exec(size_cmd)
-                    compressed_size = int(str(size_result.result).strip())
+                    try:
+                        size_cmd = f"stat -f %z {temp_path}"
+                        size_result = workspace.process.exec(size_cmd)
+                        compressed_size = int(str(size_result.result).strip())
+                    except Exception:
+                        # Try Linux stat format as fallback
+                        size_cmd = f"stat -c %s {temp_path}"
+                        size_result = workspace.process.exec(size_cmd)
+                        compressed_size = int(str(size_result.result).strip())
 
                     # Download the compressed file
                     if hasattr(filesystem, 'download_file'):
@@ -2338,11 +2764,17 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                         content = base64.b64decode(str(cat_result.result).strip())
 
                     # Clean up temporary file
-                    workspace.process.exec(f"rm {temp_path}")
+                    try:
+                        workspace.process.exec(f"rm {temp_path}")
+                    except Exception as rm_err:
+                        logger.warning(f"Error removing temporary file: {rm_err}")
 
                     # Clean up workspace if needed
-                    if needs_cleanup:
-                        daytona.remove(workspace)
+                    if needs_cleanup and daytona and workspace:
+                        try:
+                            daytona.remove(workspace)
+                        except Exception as cleanup_err:
+                            logger.warning(f"Error cleaning up workspace: {cleanup_err}")
 
                     return {
                         "success": True,
@@ -2355,9 +2787,22 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                         "compression_ratio": round(compressed_size / (file_info["size"] if isinstance(file_info, dict) else file_info.size), 2),
                         "message": f"File was compressed before download. Original: {size_mb:.2f}MB, Compressed: {compressed_size/(1024*1024):.2f}MB"
                     }
-                except Exception as e:
-                    logger.error(f"Error compressing file: {e}")
-                    raise
+                except Exception as compress_err:
+                    logger.error(f"Error compressing file: {compress_err}")
+                    
+                    # Cleanup on error
+                    if needs_cleanup and daytona and workspace:
+                        try:
+                            daytona.remove(workspace)
+                        except Exception as cleanup_err:
+                            logger.warning(f"Error cleaning up workspace: {cleanup_err}")
+                    
+                    return {
+                        "success": False,
+                        "error": f"Error compressing file: {str(compress_err)}",
+                        "error_type": "FileSystemError" if isinstance(compress_err, FileSystemError) else "CompressionError",
+                        "file_path": path
+                    }
 
             elif download_option == "force_download":
                 # Force download despite size
@@ -2367,7 +2812,8 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                 return {
                     "success": False,
                     "error": f"Unknown download option: {download_option}",
-                    "options": ["download_partial", "convert_to_text", "compress_file", "force_download"]
+                    "options": ["download_partial", "convert_to_text", "compress_file", "force_download"],
+                    "error_type": "InvalidOptionError"
                 }
 
         # Download the file normally
@@ -2378,9 +2824,12 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
             logger.info(f"Successfully downloaded file: {path}, size: {len(content)} bytes")
 
             # Clean up if needed
-            if needs_cleanup:
-                daytona.remove(workspace)
-                logger.info("Cleaned up temporary workspace")
+            if needs_cleanup and daytona and workspace:
+                try:
+                    daytona.remove(workspace)
+                    logger.info("Cleaned up temporary workspace")
+                except Exception as cleanup_err:
+                    logger.warning(f"Error cleaning up workspace: {cleanup_err}")
 
             # Return metadata along with content
             return {
@@ -2393,13 +2842,53 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
             }
         except Exception as e:
             logger.error(f"Error downloading file: {e}")
-            raise
+            
+            # Cleanup on error
+            if needs_cleanup and daytona and workspace:
+                try:
+                    daytona.remove(workspace)
+                except Exception as cleanup_err:
+                    logger.warning(f"Error cleaning up workspace: {cleanup_err}")
+            
+            error_type = "FileSystemError"
+            if "permission" in str(e).lower():
+                error_type = "FileNotAccessibleError"
+            elif "network" in str(e).lower() or "connection" in str(e).lower():
+                error_type = "NetworkError"
+            
+            return {
+                "success": False,
+                "error": f"Error downloading file: {str(e)}",
+                "error_type": error_type,
+                "file_path": path
+            }
 
     except Exception as e:
         logger.error(f"File download failed: {e}", exc_info=True)
+        
+        # Cleanup on error
+        if needs_cleanup and daytona and workspace:
+            try:
+                daytona.remove(workspace)
+            except Exception as cleanup_err:
+                logger.warning(f"Error cleaning up workspace during exception handling: {cleanup_err}")
+        
+        error_type = "UnknownError"
+        if isinstance(e, FileNotAccessibleError):
+            error_type = "FileNotAccessibleError"
+        elif isinstance(e, FileTooLargeError):
+            error_type = "FileTooLargeError"
+        elif isinstance(e, FileSystemError):
+            error_type = "FileSystemError"
+        elif isinstance(e, NetworkError):
+            error_type = "NetworkError"
+        elif isinstance(e, WorkspaceError):
+            error_type = "WorkspaceError"
+        
         return {
             "success": False,
             "error": str(e),
+            "error_type": error_type,
             "file_path": path
         }
 
