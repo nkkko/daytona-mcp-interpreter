@@ -41,10 +41,10 @@ source .venv/bin/activate
 
 3. Install dependencies:
 ```bash
-uv add "mcp[cli]" pydantic python-dotenv "daytona-sdk>=0.10.2"
+uv add "mcp[cli]" pydantic python-dotenv "daytona-sdk>=0.10.5"
 ```
 
-> Note: This project requires daytona-sdk version 0.10.2 or higher. Earlier versions have incompatible FileSystem API.
+> Note: This project requires daytona-sdk version 0.10.5 or higher. Earlier versions have incompatible FileSystem API.
 
 ## Environment Variables
 

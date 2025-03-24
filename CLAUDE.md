@@ -4,7 +4,7 @@
 - **Run server**: `uv run src/daytona_mcp_interpreter/server.py`
 - **Test with MCP Inspector**: `npx @modelcontextprotocol/inspector uv --directory . run src/daytona_mcp_interpreter/server.py`
 - **View logs**: `tail -f /tmp/daytona-interpreter.log`
-- **Install dependencies**: `uv add "mcp[cli]" pydantic python-dotenv "daytona-sdk>=0.10.2"`
+- **Install dependencies**: `uv add "mcp[cli]" pydantic python-dotenv "daytona-sdk>=0.10.5"`
 
 ## Code Style
 - **Imports**: Standard library first, third-party second, project modules last
