@@ -3,17 +3,20 @@
 ## Build Commands
 - **Run server**: `uv run src/daytona_mcp_interpreter/server.py`
 - **Test with MCP Inspector**: `npx @modelcontextprotocol/inspector uv --directory . run src/daytona_mcp_interpreter/server.py`
+- **Install dependencies**: `uv add "mcp[cli]" pydantic python-dotenv "daytona-sdk>=0.10.5" httpx>=0.24.0`
 - **View logs**: `tail -f /tmp/daytona-interpreter.log`
-- **Install dependencies**: `uv add "mcp[cli]" pydantic python-dotenv "daytona-sdk>=0.10.5"`
+- **Clean build files**: `rm -rf dist/ build/ *.egg-info/`
+- **Build package**: `uv pip install build && python -m build`
 
 ## Code Style
-- **Imports**: Standard library first, third-party second, project modules last
-- **Type annotations**: Use comprehensive type hints for all parameters and return values
+- **Imports**: Group in order: standard library, third-party, project modules; alphabetize within groups
+- **Type annotations**: Comprehensive type hints for all parameters and return values
 - **Naming**: Classes in PascalCase, functions/methods in snake_case, constants in UPPER_SNAKE_CASE
-- **Documentation**: Triple-quoted docstrings for classes and functions
+- **Documentation**: Triple-quoted docstrings for classes and functions using Google style
 - **Error handling**: Use try/except with specific exceptions, log exceptions with context
 - **Logging**: Use hierarchical logging with appropriate levels (debug, info, error)
 - **Async pattern**: Use asyncio for asynchronous operations
+- **Line length**: 88 characters (Black formatter default)
 
 ## Project Structure
 - `src/daytona_mcp_interpreter/`: Main source directory
