@@ -1,10 +1,22 @@
 # Daytona MCP Interpreter
 
-A Model Context Protocol server that provides Python code execution capabilities in ephemeral Daytona sandbox.
+A Model Context Protocol server that provides Python code execution capabilities in ephemeral Daytona sandboxes.
 
 [![Watch the video](https://img.youtube.com/vi/26m2MjY8a5c/maxresdefault.jpg)](https://youtu.be/26m2MjY8a5c)
 
-## Installation+
+## Overview
+
+Daytona MCP Interpreter enables AI assistants like Claude to execute Python code and shell commands in secure, isolated environments. It implements the Model Context Protocol (MCP) standard to provide tools for:
+
+- Python code execution in sandboxed environments
+- Shell command execution
+- File management (upload/download)
+- Git repository cloning
+- Web preview generation for running servers
+
+All execution happens in ephemeral Daytona workspaces that are automatically cleaned up after use.
+
+## Installation
 
 1. Install uv if you haven't already:
 ```bash
@@ -13,13 +25,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 2. Create and activate virtual environment.
 
-If by any case you have existing env, you should deactivate and remove the virtual environment:
+If you have an existing env, deactivate and remove it first:
 ```bash
 deactivate
 rm -rf .venv
 ```
 
-Create and activate virtual environment:
+Create and activate a new virtual environment:
 ```bash
 uv venv
 source .venv/bin/activate
@@ -34,6 +46,16 @@ uv add "mcp[cli]" pydantic python-dotenv "daytona-sdk>=0.10.2"
 
 > Note: This project requires daytona-sdk version 0.10.2 or higher. Earlier versions have incompatible FileSystem API.
 
+## Environment Variables
+
+Configure these environment variables for proper operation:
+
+- `MCP_DAYTONA_API_KEY`: Required API key for Daytona authentication
+- `MCP_DAYTONA_SERVER_URL`: Server URL (default: https://app.daytona.io/api)
+- `MCP_DAYTONA_TIMEOUT`: Request timeout in seconds (default: 180.0)
+- `MCP_DAYTONA_TARGET`: Target region (default: eu)
+- `MCP_VERIFY_SSL`: Enable SSL verification (default: false)
+
 ## Development
 
 Run the server directly:
@@ -41,14 +63,12 @@ Run the server directly:
 uv run src/daytona_mcp_interpreter/server.py
 ```
 
-Or if uv is not found (not in path):
+Or if uv is not in your path:
 ```
 /Users/USER/.local/bin/uv run ~LOCATION/daytona-mcp-interpreter/src/daytona_mcp_interpreter/server.py
 ```
 
-NOTE. You can run `which uv` to get the path to uv.
-
-You can use MCP Inspector to test the server:
+Use MCP Inspector to test the server:
 ```bash
 npx @modelcontextprotocol/inspector \
   uv \
@@ -57,18 +77,18 @@ npx @modelcontextprotocol/inspector \
   src/daytona_mcp_interpreter/server.py
 ```
 
-Tail log:
+View logs:
 ```
 tail -f /tmp/daytona-interpreter.log
 ```
 
-## JSON Config file
+## Integration with Claude Desktop
 
-1. Configure in Claude Desktop, Windsurf, Cursor or other config file:
+1. Configure in Claude Desktop (or other MCP-compatible clients):
 
-Claude Desktop on MacOS config is here: `~/Library/Application Support/Claude/claude_desktop_config.json`.
+On MacOS, edit: `~/Library/Application Support/Claude/claude_desktop_config.json`  
+On Windows, edit: `%APPDATA%\Claude\claude_desktop_config.json`
 
-CONFIG:
 ```json
 {
     "mcpServers": {
@@ -83,8 +103,8 @@ CONFIG:
             "env": {
                 "PYTHONUNBUFFERED": "1",
                 "MCP_DAYTONA_API_KEY": "api_key",
-                "MCP_DAYTONA_API_URL": "api_server_url",
-                "MCP_DAYTONA_TIMEOUT": "30.0",
+                "MCP_DAYTONA_SERVER_URL": "api_server_url",
+                "MCP_DAYTONA_TIMEOUT": "30.0", 
                 "MCP_VERIFY_SSL": "false",
                 "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
             }
@@ -93,22 +113,11 @@ CONFIG:
 }
 ```
 
-On Windows edit `%APPDATA%\Claude\claude_desktop_config.json` and adjust path.
-
 2. Restart Claude Desktop
+3. The Daytona Python interpreter tools will be available in Claude
 
-3. The Python interpreter tool will be available in Claude Desktop
+## Available Tools
 
-## Features
-
-- Executes Python code in isolated workspaces
-- Captures stdout, stderr, and exit codes
-- Handles file downloads with smart options for large files
-- Automatic workspace cleanup
-- Secure execution environment
-- Logging for debugging
-
-## Tools
 ### Shell Exec
 
 Executes shell commands in the Daytona workspace.
@@ -185,49 +194,6 @@ file_upload(
 )
 ```
 
-### Matplotlib Plot Generator
-
-Generates optimized matplotlib plots with controlled format and resolution settings.
-
-**Basic Usage:**
-```python
-matplotlib_plot_generator(code="""
-import numpy as np
-
-# Generate data
-x = np.linspace(0, 10, 100)
-y1 = np.sin(x)
-y2 = np.cos(x)
-
-# Create plot
-import matplotlib.pyplot as plt
-plt.figure(figsize=(8, 5))
-plt.plot(x, y1, 'b-', label='Sine')
-plt.plot(x, y2, 'r--', label='Cosine')
-plt.title('Sine and Cosine Functions')
-plt.xlabel('X axis')
-plt.ylabel('Y axis')
-plt.legend()
-plt.grid(True)
-""")
-```
-
-**Advanced Usage:**
-```python
-# Generate high-resolution PNG plot 
-matplotlib_plot_generator(
-    code="import matplotlib.pyplot as plt; plt.plot([1, 2, 3, 4]); plt.title('Simple Line Plot')",
-    format="png",
-    dpi=150
-)
-
-# Generate SVG for better quality in documents
-matplotlib_plot_generator(
-    code="import matplotlib.pyplot as plt; plt.bar(['A', 'B', 'C'], [3, 7, 2]); plt.title('Simple Bar Chart')",
-    format="svg"
-)
-```
-
 ### Git Clone
 
 Clones a Git repository into the Daytona workspace for analysis and code execution.
@@ -292,5 +258,6 @@ shell_exec(command="python -m http.server 8000 &")
 # Then generate a preview link for the server
 web_preview(port=8000, description="Python HTTP Server")
 ```
+
 <a href="https://glama.ai/mcp/servers/hj7jlxkxpk"><img width="380" height="200" src="https://glama.ai/mcp/servers/hj7jlxkxpk/badge" alt="Daytona Python Interpreter MCP server" /></a>
 [![smithery badge](https://smithery.ai/badge/@nkkko/daytona-mcp)](https://smithery.ai/server/@nkkko/daytona-mcp)
