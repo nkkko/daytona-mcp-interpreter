@@ -1,4 +1,4 @@
-# Daytona MCP Python Interpreter
+# Daytona MCP Interpreter
 
 A Model Context Protocol server that provides Python code execution capabilities in ephemeral Daytona sandbox.
 
@@ -109,28 +109,7 @@ On Windows edit `%APPDATA%\Claude\claude_desktop_config.json` and adjust path.
 - Logging for debugging
 
 ## Tools
-
-### Python Interpreter
-
-Executes Python code in a Daytona workspace with special support for matplotlib and other plotting libraries.
-
-```python
-# Example: Simple calculation
-result = 42 * 2
-print(f"The answer is {result}")
-
-# Example: Matplotlib plotting
-import matplotlib.pyplot as plt
-import numpy as np
-
-x = np.linspace(0, 10, 100)
-y = np.sin(x)
-plt.plot(x, y)
-plt.title("Sine Wave")
-plt.savefig("sine_wave.png")
-```
-
-### Command Executor
+### Shell Exec
 
 Executes shell commands in the Daytona workspace.
 
@@ -142,31 +121,68 @@ ls -la
 pip install pandas
 ```
 
-### File Downloader
+### File Download
 
 Downloads files from the Daytona workspace with smart handling for large files.
 
 **Basic Usage:**
 ```
-file_downloader(file_path="/path/to/file.txt")
+file_download(file_path="/path/to/file.txt")
 ```
 
 **Advanced Usage:**
 ```
 # Set custom file size limit
-file_downloader(file_path="/path/to/large_file.csv", max_size_mb=10.0)
+file_download(file_path="/path/to/large_file.csv", max_size_mb=10.0)
 
 # Download partial content for large files
-file_downloader(file_path="/path/to/large_file.csv", download_option="download_partial", chunk_size_kb=200)
+file_download(file_path="/path/to/large_file.csv", download_option="download_partial", chunk_size_kb=200)
 
 # Convert large file to text
-file_downloader(file_path="/path/to/large_file.pdf", download_option="convert_to_text")
+file_download(file_path="/path/to/large_file.pdf", download_option="convert_to_text")
 
 # Compress file before downloading
-file_downloader(file_path="/path/to/large_file.bin", download_option="compress_file")
+file_download(file_path="/path/to/large_file.bin", download_option="compress_file")
 
 # Force download despite size
-file_downloader(file_path="/path/to/large_file.zip", download_option="force_download")
+file_download(file_path="/path/to/large_file.zip", download_option="force_download")
+```
+
+### File Upload
+
+Uploads files to the Daytona workspace. Supports both text and binary files.
+
+**Basic Usage:**
+```
+# Upload a text file
+file_upload(file_path="/workspace/example.txt", content="Hello, World!")
+```
+
+**Advanced Usage:**
+```
+# Upload a text file with specific path
+file_upload(
+    file_path="/workspace/data/config.json",
+    content='{"setting": "value", "enabled": true}'
+)
+
+# Upload a binary file using base64 encoding
+import base64
+with open("local_image.png", "rb") as f:
+    base64_content = base64.b64encode(f.read()).decode('utf-8')
+
+file_upload(
+    file_path="/workspace/images/uploaded.png",
+    content=base64_content,
+    encoding="base64"
+)
+
+# Upload without overwriting existing files
+file_upload(
+    file_path="/workspace/important.txt",
+    content="New content",
+    overwrite=False
+)
 ```
 
 ### Matplotlib Plot Generator
@@ -212,97 +228,69 @@ matplotlib_plot_generator(
 )
 ```
 
-### Git Repository Cloner
+### Git Clone
 
 Clones a Git repository into the Daytona workspace for analysis and code execution.
 
 **Basic Usage:**
 ```
-git_repo_cloner(repo_url="https://github.com/username/repository.git")
+git_clone(repo_url="https://github.com/username/repository.git")
 ```
 
 **Advanced Usage:**
 ```
 # Clone a specific branch
-git_repo_cloner(
+git_clone(
     repo_url="https://github.com/username/repository.git",
     branch="develop"
 )
 
 # Clone to a specific directory with full history
-git_repo_cloner(
+git_clone(
     repo_url="https://github.com/username/repository.git",
     target_path="my_project",
     depth=0  # 0 means full history
 )
 
 # Clone with Git LFS support for repositories with large files
-git_repo_cloner(
+git_clone(
     repo_url="https://github.com/username/large-files-repo.git",
     lfs=True
 )
 ```
 
-### Preview Link Generator
+### Web Preview
 
 Generates a preview URL for web servers running inside the Daytona workspace.
 
 **Basic Usage:**
 ```
 # Generate a preview link for a web server running on port 3000
-preview_link_generator(port=3000)
+web_preview(port=3000)
 ```
 
 **Advanced Usage:**
 ```
 # Generate a preview link with a descriptive name
-preview_link_generator(
+web_preview(
     port=8080,
     description="React Development Server"
 )
 
 # Generate a link without checking if server is running
-preview_link_generator(
+web_preview(
     port=5000,
     check_server=False
 )
 ```
 
-**Complete Web Server Example:**
-```python
-# First run a simple web server using Python
-python_interpreter(code="""
-import http.server
-import socketserver
-import threading
-
-# Define server on port 8000
-PORT = 8000
-Handler = http.server.SimpleHTTPRequestHandler
-
-# Create a simple HTML file
-with open('index.html', 'w') as f:
-    f.write('<html><body><h1>Hello from Daytona!</h1></body></html>')
-
-# Start server in a separate thread so it doesn't block
-def run_server():
-    with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print(f"Server running at port {PORT}")
-        httpd.serve_forever()
-
-# Start the server thread
-server_thread = threading.Thread(target=run_server)
-server_thread.daemon = True
-server_thread.start()
-
-print(f"Server started on port {PORT}")
-print("You can now generate a preview link to access it externally")
-""")
+**Example:**
+```bash
+# First run a simple web server using Python via the shell
+shell_exec(command="python -m http.server 8000 &")
 
 # Then generate a preview link for the server
-preview_link_generator(port=8000, description="Python HTTP Server")
+web_preview(port=8000, description="Python HTTP Server")
 ```
-```
-
 <a href="https://glama.ai/mcp/servers/hj7jlxkxpk"><img width="380" height="200" src="https://glama.ai/mcp/servers/hj7jlxkxpk/badge" alt="Daytona Python Interpreter MCP server" /></a>
 [![smithery badge](https://smithery.ai/badge/@nkkko/daytona-mcp)](https://smithery.ai/server/@nkkko/daytona-mcp)
