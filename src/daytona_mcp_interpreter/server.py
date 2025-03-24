@@ -235,7 +235,7 @@ class DaytonaInterpreter:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "command": {"type": "string", "description": "Shell command to execute"}
+                            "command": {"type": "string", "description": "Shell command to execute. Always use verbose where available."}
                         },
                         "required": ["command"]
                     }
@@ -323,16 +323,16 @@ class DaytonaInterpreter:
                 file_path = arguments.get("file_path")
                 if not file_path:
                     raise ValueError("File path argument is required")
-                
+
                 # Extract optional parameters
                 max_size_mb = arguments.get("max_size_mb", 5.0)
                 download_option = arguments.get("download_option")
                 chunk_size_kb = arguments.get("chunk_size_kb", 100)
-                
+
                 try:
                     # Add extra debug logging
                     self.logger.info(f"Using file_download with: path={file_path}, max_size={max_size_mb}MB, option={download_option}, chunk_size={chunk_size_kb}KB")
-                    
+
                     # Call our improved file_downloader function
                     result = file_downloader(
                         path=file_path,
@@ -340,9 +340,9 @@ class DaytonaInterpreter:
                         download_option=download_option,
                         chunk_size_kb=chunk_size_kb
                     )
-                    
+
                     self.logger.info(f"Download result: success={result.get('success', False)}")
-                    
+
                     # Check if we got a download options response (for large files)
                     if result.get("file_too_large"):
                         options_text = (
@@ -357,17 +357,17 @@ class DaytonaInterpreter:
                             f"file_downloader(file_path='{file_path}', download_option='download_partial')"
                         )
                         return [TextContent(type="text", text=options_text)]
-                    
+
                     # For successful downloads, process the content
                     if result.get("success"):
                         # If partial download, convert_to_text, or compressed, add a message
                         if result.get("partial") or result.get("converted") or result.get("compressed"):
                             message = result.get("message", "")
                             content = result.get("content", b"")
-                            
+
                             # For binary content, determine content type
                             content_type = result.get("content_type", "application/octet-stream")
-                            
+
                             # For image content types, return as ImageContent
                             if content_type.startswith("image/"):
                                 # Convert binary content to base64
@@ -411,41 +411,41 @@ class DaytonaInterpreter:
                                         ),
                                         TextContent(type="text", text=message)
                                     ]
-                        
+
                         # For standard downloads, use process_file_content
                         content = result.get("content", b"")
                         if content:
                             return await self.process_file_content(file_path, content)
-                    
+
                     # For errors, return the error message
                     if not result.get("success"):
                         error_msg = f"Error downloading file: {result.get('error', 'Unknown error')}"
                         self.logger.error(error_msg)
                         return [TextContent(type="text", text=error_msg)]
-                    
+
                     # Fallback for unexpected results
                     return [TextContent(type="text", text=f"Unexpected download result: {json.dumps(result, default=str)}")]
                 except Exception as e:
                     self.logger.error(f"Error in file_downloader: {e}", exc_info=True)
                     # Return error as text
                     return [TextContent(type="text", text=f"Error downloading file: {str(e)}")]
-                    
-                    
+
+
             elif name == "git_clone":
                 repo_url = arguments.get("repo_url")
                 if not repo_url:
                     raise ValueError("Repository URL is required")
-                
+
                 # Extract optional parameters
                 target_path = arguments.get("target_path")
                 branch = arguments.get("branch")
                 depth = arguments.get("depth", 1)
                 lfs = arguments.get("lfs", False)
-                
+
                 try:
                     # Add debug logging
                     self.logger.info(f"Using git_clone with: url={repo_url}, target={target_path}, branch={branch}, depth={depth}, lfs={lfs}")
-                    
+
                     # Call the git_clone function
                     result = git_repo_cloner(
                         repo_url=repo_url,
@@ -454,56 +454,56 @@ class DaytonaInterpreter:
                         depth=depth,
                         lfs=lfs
                     )
-                    
+
                     # Handle errors
                     if not result.get("success", False):
                         error_msg = f"Error cloning repository: {result.get('error', 'Unknown error')}"
                         self.logger.error(error_msg)
                         return [TextContent(type="text", text=error_msg)]
-                    
+
                     # Format successful clone result
                     target_dir = result.get("target_directory", "repo")
                     total_files = result.get("total_files", 0)
                     files_sample = result.get("files_sample", [])
                     repo_info = result.get("repository_info", "")
-                    
+
                     # Build response
                     response_parts = [
                         f"Repository cloned successfully into '{target_dir}'",
                         f"Total files: {total_files}",
                         f"\nRepository information:\n{repo_info}"
                     ]
-                    
+
                     if files_sample:
                         sample_list = "\n".join(files_sample[:20])  # Show first 20 files
                         file_count_msg = ""
                         if len(files_sample) > 20:
                             file_count_msg = f"...and {len(files_sample) - 20} more files"
                         response_parts.append(f"\nSample files:\n{sample_list}\n{file_count_msg}")
-                        
+
                         if total_files > len(files_sample):
                             response_parts.append(f"\n(Showing {len(files_sample)} of {total_files} total files)")
-                    
+
                     return [TextContent(type="text", text="\n".join(response_parts))]
                 except Exception as e:
                     self.logger.error(f"Error in git_repo_cloner: {e}", exc_info=True)
                     return [TextContent(type="text", text=f"Error cloning repository: {str(e)}")]
-                    
+
             elif name == "file_upload":
                 file_path = arguments.get("file_path")
                 content = arguments.get("content")
                 encoding = arguments.get("encoding", "text")
                 overwrite = arguments.get("overwrite", True)
-                
+
                 if not file_path:
                     raise ValueError("File path is required")
                 if content is None:
                     raise ValueError("Content is required")
-                
+
                 try:
                     # Add debug logging
                     self.logger.info(f"Using file_upload with: path={file_path}, encoding={encoding}, overwrite={overwrite}")
-                    
+
                     # Call the file_uploader function
                     result = file_uploader(
                         file_path=file_path,
@@ -511,22 +511,22 @@ class DaytonaInterpreter:
                         encoding=encoding,
                         overwrite=overwrite
                     )
-                    
+
                     self.logger.info(f"Upload result: success={result.get('success', False)}")
-                    
+
                     if result.get("success"):
                         return [TextContent(type="text", text=result.get("message", "File uploaded successfully"))]
                     else:
-                        return [TextContent(type="text", text=f"Error uploading file: {result.get('error', 'Unknown error')}")], status_code=500
+                        return [TextContent(type="text", text=f"Error uploading file: {result.get('error', 'Unknown error')}")]
                 except Exception as e:
                     self.logger.error(f"Error in file_upload: {e}", exc_info=True)
                     return [TextContent(type="text", text=f"Error uploading file: {str(e)}")]
-                    
+
             elif name == "web_preview":
                 port = arguments.get("port")
                 if port is None:
                     raise ValueError("Port number is required")
-                
+
                 # Validate port is a valid number
                 try:
                     port = int(port)
@@ -534,11 +534,11 @@ class DaytonaInterpreter:
                         raise ValueError(f"Invalid port number: {port}. Must be between 1 and 65535.")
                 except ValueError as e:
                     return [TextContent(type="text", text=f"Invalid port: {e}")]
-                
+
                 # Extract optional parameters
                 description = arguments.get("description", "")
                 check_server = arguments.get("check_server", True)
-                
+
                 try:
                     # Call the web_preview function
                     self.logger.info(f"Using web_preview with port={port}")
@@ -547,53 +547,53 @@ class DaytonaInterpreter:
                         description=description,
                         check_server=check_server
                     )
-                    
+
                     # Handle errors
                     if not result.get("success", False):
                         error_msg = f"Error generating preview link: {result.get('error', 'Unknown error')}"
-                        
+
                         # Add process info if available to help diagnose the issue
                         process_info = result.get("process_info", "")
                         if process_info and process_info != "No process found":
                             error_msg += f"\n\nProcess found on port {port}:\n{process_info}"
-                        
+
                         self.logger.error(error_msg)
                         return [TextContent(type="text", text=error_msg)]
-                    
+
                     # Format successful result
                     preview_url = result.get("preview_url", "")
                     accessible = result.get("accessible", None)
                     status_code = result.get("status_code", None)
-                    
+
                     # Create a response message with the preview URL
                     response_parts = []
-                    
+
                     # Add the description if provided
                     if description:
                         response_parts.append(f"# {description}")
-                    
+
                     # Add the preview URL (primary information)
                     response_parts.append(f"Preview URL: {preview_url}")
-                    
+
                     # Add accessibility status if checked
                     if check_server and accessible is not None:
                         if accessible:
                             response_parts.append(f"URL is accessible (status code: {status_code})")
                         else:
                             response_parts.append(f"Warning: URL is not accessible. The server may not be properly configured to accept external requests.")
-                    
+
                     # Add any additional notes
                     note = result.get("note", "")
                     if note:
                         response_parts.append(f"Note: {note}")
-                    
+
                     # Add useful information for debugging
                     response_parts.append(f"\nPort: {port}")
                     response_parts.append(f"Workspace ID: {result.get('workspace_id', '')}")
-                    
-                    # Create clickable link using markdown 
+
+                    # Create clickable link using markdown
                     response_parts.append(f"\n[Click here to open preview]({preview_url})")
-                    
+
                     return [TextContent(type="text", text="\n".join(response_parts))]
                 except Exception as e:
                     self.logger.error(f"Error in preview_link_generator: {e}", exc_info=True)
@@ -1693,7 +1693,7 @@ def get_content_type(file_path: str) -> str:
     mime_type, _ = mimetypes.guess_type(file_path)
     if mime_type:
         return mime_type
-    
+
     # Default content types for common extensions
     ext = os.path.splitext(file_path.lower())[1]
     content_types = {
@@ -1718,26 +1718,26 @@ def get_content_type(file_path: str) -> str:
         '.tar': 'application/x-tar',
         '.gz': 'application/gzip',
     }
-    
+
     return content_types.get(ext, 'application/octet-stream')
 
 def preview_link_generator(port: int, description: str = "", check_server: bool = True):
     """
     Generate a preview link for a web server running inside the Daytona workspace.
     Used by the web_preview tool.
-    
+
     Args:
         port: The port number the server is running on
         description: Optional description of the server
         check_server: Whether to check if the server is running (default: True)
-        
+
     Returns:
         Dict containing preview link information
     """
     try:
         logger = logging.getLogger("daytona-interpreter")
         logger.info(f"Generating preview link for port {port}")
-        
+
         # Initialize Daytona using the current interpreter's instance if possible
         global _interpreter_instance
         if _interpreter_instance and _interpreter_instance.workspace:
@@ -1747,53 +1747,53 @@ def preview_link_generator(port: int, description: str = "", check_server: bool 
             logger.info("Creating new Daytona workspace")
             daytona = Daytona()
             workspace = daytona.create()
-            
+
         # Check if the server is running on the specified port
         if check_server:
             logger.info(f"Checking if server is running on port {port}")
             check_cmd = f"curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{port} --max-time 2 || echo 'error'"
             check_result = workspace.process.exec(check_cmd)
             response = str(check_result.result).strip()
-            
+
             # If we can't connect or get an error response
             if response == 'error' or response.startswith('0'):
                 logger.warning(f"No server detected on port {port}")
-                
+
                 # Check what might be using the port
                 ps_cmd = f"ps aux | grep ':{port}' | grep -v grep || echo 'No process found'"
                 ps_result = workspace.process.exec(ps_cmd)
                 process_info = str(ps_result.result).strip()
-                
+
                 return {
                     "success": False,
                     "error": f"No server detected on port {port}. Please make sure your server is running.",
                     "port": port,
                     "process_info": process_info
                 }
-        
+
         # Extract the necessary domain information from workspace metadata
         try:
             # Extract node domain from provider metadata (JSON)
             node_domain = json.loads(workspace.instance.info.provider_metadata)['nodeDomain']
-            
+
             # Format the preview URL
             preview_url = f"http://{port}-{workspace.id}.{node_domain}"
-            
+
             # Test that the URL is accessible via curl with timeout
             if check_server:
                 # Test via port forwarding to make sure it's accessible
                 check_cmd = f"curl -s -o /dev/null -w '%{{http_code}}' {preview_url} --max-time 3 || echo 'error'"
                 check_result = workspace.process.exec(check_cmd)
                 response = str(check_result.result).strip()
-                
+
                 accessible = response != 'error' and not response.startswith('0')
                 status_code = response if response.isdigit() else None
-                
+
                 logger.info(f"Preview URL {preview_url} check result: {response}")
             else:
                 accessible = None
                 status_code = None
-            
+
             # Return the formatted preview URL and metadata
             return {
                 "success": True,
@@ -1807,20 +1807,20 @@ def preview_link_generator(port: int, description: str = "", check_server: bool 
             }
         except Exception as e:
             logger.error(f"Error extracting domain information: {e}")
-            
+
             # Try alternate method to get domain info
             try:
                 # Extract from workspace info
                 workspace_info = workspace.info()
                 domains_info = str(workspace_info)
-                
+
                 # Look for domain pattern in the info
                 import re
                 domain_match = re.search(r'domain[\'"]?\s*:\s*[\'"]([^"\'\s]+)[\'"]', domains_info)
                 if domain_match:
                     node_domain = domain_match.group(1)
                     preview_url = f"http://{port}-{workspace.id}.{node_domain}"
-                    
+
                     return {
                         "success": True,
                         "preview_url": preview_url,
@@ -1832,7 +1832,7 @@ def preview_link_generator(port: int, description: str = "", check_server: bool 
                     }
             except Exception as fallback_error:
                 logger.error(f"Fallback domain extraction failed: {fallback_error}")
-            
+
             return {
                 "success": False,
                 "error": f"Failed to generate preview link: {str(e)}",
@@ -1850,21 +1850,21 @@ def git_repo_cloner(repo_url: str, target_path: str = None, branch: str = None, 
     """
     Clone a Git repository into the Daytona workspace.
     Used by the git_clone tool.
-    
+
     Args:
         repo_url: The URL of the Git repository to clone (https or ssh)
         target_path: Target directory to clone into (default: repository name)
         branch: Branch to checkout (default: repository default branch)
         depth: Depth of history to clone (default: 1 for shallow clone)
         lfs: Whether to enable Git LFS (default: False)
-        
+
     Returns:
         Dict containing clone operation results and file list
     """
     try:
         logger = logging.getLogger("daytona-interpreter")
         logger.info(f"Cloning Git repository: {repo_url}")
-        
+
         # Initialize Daytona using the current interpreter's instance if possible
         global _interpreter_instance
         if _interpreter_instance and _interpreter_instance.workspace:
@@ -1874,7 +1874,7 @@ def git_repo_cloner(repo_url: str, target_path: str = None, branch: str = None, 
             logger.info("Creating new Daytona workspace")
             daytona = Daytona()
             workspace = daytona.create()
-        
+
         # Extract repo name from URL for default target path
         import re
         repo_name = re.search(r"([^/]+)(?:\.git)?$", repo_url)
@@ -1882,32 +1882,32 @@ def git_repo_cloner(repo_url: str, target_path: str = None, branch: str = None, 
             repo_name = repo_name.group(1)
         else:
             repo_name = "repo"
-            
+
         # Use provided target path or default to repo name
         target_dir = target_path or repo_name
-        
+
         # Prepare the git clone command
         clone_cmd = f"git clone"
-        
+
         # Add depth parameter for shallow clone if specified
         if depth > 0:
             clone_cmd += f" --depth {depth}"
-            
+
         # Add branch parameter if specified
         if branch:
             clone_cmd += f" --branch {branch}"
-            
+
         # Add the repository URL
         clone_cmd += f" {shlex.quote(repo_url)}"
-        
+
         # Add target directory if it's not the default
         if target_path:
             clone_cmd += f" {shlex.quote(target_path)}"
-            
+
         # Execute the clone command
         logger.info(f"Executing git clone command: {clone_cmd}")
         clone_result = workspace.process.exec(clone_cmd, timeout=180)  # Longer timeout for large repos
-        
+
         # Check if clone was successful
         if clone_result.exit_code != 0:
             logger.error(f"Git clone failed with exit code {clone_result.exit_code}")
@@ -1916,39 +1916,39 @@ def git_repo_cloner(repo_url: str, target_path: str = None, branch: str = None, 
                 "error": f"Git clone failed: {clone_result.result}",
                 "exit_code": clone_result.exit_code
             }
-            
+
         # If Git LFS is enabled, fetch LFS content
         if lfs:
             logger.info("Git LFS enabled, fetching LFS content")
             try:
                 # Move into the cloned directory
                 cd_cmd = f"cd {shlex.quote(target_dir)}"
-                
+
                 # Setup and pull LFS content
                 lfs_cmd = f"{cd_cmd} && git lfs install && git lfs pull"
                 lfs_result = workspace.process.exec(lfs_cmd, timeout=180)
-                
+
                 if lfs_result.exit_code != 0:
                     logger.warning(f"Git LFS pull had issues: {lfs_result.result}")
             except Exception as e:
                 logger.warning(f"Error with Git LFS: {e}")
-        
+
         # List files in the cloned repository
         try:
             ls_cmd = f"find {shlex.quote(target_dir)} -type f -not -path '*/\\.git/*' | sort | head -n 100"
             ls_result = workspace.process.exec(ls_cmd)
             file_list = str(ls_result.result).strip().split('\n')
-            
+
             # Get repository info
             info_cmd = f"cd {shlex.quote(target_dir)} && git log -1 --pretty=format:'%h %an <%ae> %ad %s' && echo '' && git branch -v"
             info_result = workspace.process.exec(info_cmd)
             repo_info = str(info_result.result).strip()
-            
+
             # Count total files
             count_cmd = f"find {shlex.quote(target_dir)} -type f -not -path '*/\\.git/*' | wc -l"
             count_result = workspace.process.exec(count_cmd)
             total_files = int(str(count_result.result).strip())
-            
+
             return {
                 "success": True,
                 "repository": repo_url,
@@ -1969,7 +1969,7 @@ def git_repo_cloner(repo_url: str, target_path: str = None, branch: str = None, 
                 "error_listing_files": str(e),
                 "message": f"Repository cloned successfully into {target_dir}, but error listing files"
             }
-            
+
     except Exception as e:
         logger.error(f"Error cloning repository: {e}", exc_info=True)
         return {
@@ -1983,32 +1983,60 @@ def file_uploader(file_path: str, content: str, encoding: str = "text", overwrit
     """
     Upload files to Daytona workspace.
     Used by the file_upload tool.
-    
+
     Args:
         file_path: Path where the file should be created in the workspace
         content: Content to write to the file (text or base64-encoded binary)
         encoding: Encoding of the content: 'text' (default) or 'base64'
         overwrite: Whether to overwrite the file if it already exists (default: True)
-    
+
     Returns:
         Dict containing upload status and any error messages
     """
     try:
         logger = logging.getLogger("daytona-interpreter")
         logger.info(f"Uploading file: {file_path}, encoding: {encoding}")
-        
-        # Create workspace tracker to get the shared workspace instance
-        workspace_tracker = WorkspaceTracker()
-        workspace = workspace_tracker.get_workspace()
+
+        # Get workspace from the tracking file
+        try:
+            with open(WORKSPACE_TRACKING_FILE, 'r') as f:
+                workspace_data = json.load(f)
+                workspace_id = workspace_data.get('workspace_id')
+                
+                if not workspace_id:
+                    return {
+                        "success": False,
+                        "error": "No workspace ID found in tracking file"
+                    }
+                
+                # Initialize Daytona SDK
+                config = Config()
+                daytona = Daytona(
+                    config=DaytonaConfig(
+                        api_key=config.api_key,
+                        server_url=config.server_url,
+                        target=config.target
+                    )
+                )
+                
+                # Get workspace by ID
+                workspace = daytona.get_by_id(workspace_id)
+        except Exception as e:
+            logger.error(f"Error getting workspace: {e}")
+            return {
+                "success": False,
+                "error": f"Failed to get workspace: {str(e)}"
+            }
+            
         if not workspace:
             return {
                 "success": False,
                 "error": "No workspace available"
             }
-        
+
         # Get file system instance from workspace
         fs = workspace.fs
-        
+
         # Check if file exists
         if not overwrite:
             try:
@@ -2021,7 +2049,7 @@ def file_uploader(file_path: str, content: str, encoding: str = "text", overwrit
             except Exception:
                 # File doesn't exist, which is good in this case
                 pass
-        
+
         # Prepare content based on encoding
         if encoding.lower() == "base64":
             try:
@@ -2035,7 +2063,7 @@ def file_uploader(file_path: str, content: str, encoding: str = "text", overwrit
         else:
             # Default is text encoding
             binary_content = content.encode('utf-8')
-        
+
         # Create parent directories if they don't exist
         parent_dir = os.path.dirname(file_path)
         if parent_dir:
@@ -2046,22 +2074,22 @@ def file_uploader(file_path: str, content: str, encoding: str = "text", overwrit
             except Exception as e:
                 logger.warning(f"Error checking/creating parent directory: {e}")
                 # Continue anyway, as upload_file might handle this
-        
+
         # Upload the file
         fs.upload_file(file_path, binary_content)
-        
+
         # Get file size for information
         file_stat = fs.stat(file_path)
         file_size = file_stat.get("size", 0)
         file_size_kb = file_size / 1024
-        
+
         return {
             "success": True,
             "message": f"File uploaded successfully: {file_path} ({file_size_kb:.2f} KB)",
             "file_path": file_path,
             "file_size_bytes": file_size
         }
-        
+
     except Exception as e:
         logger.error(f"Error uploading file: {e}", exc_info=True)
         return {
@@ -2074,20 +2102,20 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
     """
     Download files from Daytona workspace with advanced handling for large files.
     Used by the file_download tool.
-    
+
     Args:
         path: Path to the file in the Daytona workspace
         max_size_mb: Maximum file size in MB to download automatically
         download_option: Option to handle large files: 'download_partial', 'convert_to_text', 'compress_file', or None
         chunk_size_kb: Size of each chunk in KB when downloading partially
-    
+
     Returns:
         Dict containing file content and metadata or download options
     """
     try:
         logger = logging.getLogger("daytona-interpreter")
         logger.info(f"Downloading file: {path}, max_size: {max_size_mb}MB, option: {download_option}")
-        
+
         # Initialize Daytona using the current interpreter's instance if possible
         global _interpreter_instance
         if _interpreter_instance and _interpreter_instance.workspace and _interpreter_instance.filesystem:
@@ -2101,7 +2129,7 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
             workspace = daytona.create()
             filesystem = workspace.fs
             needs_cleanup = True
-        
+
         # First check if file exists
         try:
             response = workspace.process.exec(f"test -f {shlex.quote(path)} && echo 'exists' || echo 'not exists'")
@@ -2109,24 +2137,24 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                 raise FileNotFoundError(f"File not found: {path}")
         except Exception as e:
             logger.warning(f"Error checking if file exists: {e}")
-            
+
         # Get file info
         try:
             # Use ls to get file info if get_file_info is not available
             cmd = f"ls -la {shlex.quote(path)}"
             file_stat = workspace.process.exec(cmd)
             file_info_text = str(file_stat.result).strip()
-            
+
             # Get file size using stat command
             size_cmd = f"stat -f %z {shlex.quote(path)}"
             size_result = workspace.process.exec(size_cmd)
             file_size = int(str(size_result.result).strip())
-            
+
             # Get mime type
             mime_cmd = f"file --mime-type -b {shlex.quote(path)}"
             mime_result = workspace.process.exec(mime_cmd)
             mime_type = str(mime_result.result).strip()
-            
+
             file_info = {
                 "name": os.path.basename(path),
                 "size": file_size,
@@ -2138,11 +2166,11 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
             logger.warning(f"Error getting file info: {e}")
             # Use filesystem API as fallback
             file_info = filesystem.get_file_info(path)
-            
+
         # Calculate size in MB
         size_mb = file_info["size"] / (1024 * 1024) if isinstance(file_info, dict) else file_info.size / (1024 * 1024)
         logger.info(f"File size: {size_mb:.2f}MB")
-        
+
         # If file is too large and no download option is specified, offer options
         if size_mb > max_size_mb and download_option is None:
             options = {
@@ -2154,13 +2182,13 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                 "content_type": get_content_type(path),
                 "options": [
                     "download_partial",
-                    "convert_to_text", 
+                    "convert_to_text",
                     "compress_file",
                     "force_download"
                 ],
                 "message": f"File is {round(size_mb, 2)}MB which exceeds the {max_size_mb}MB limit. Choose an option to proceed."
             }
-            
+
             # Clean up if needed
             if needs_cleanup:
                 try:
@@ -2168,9 +2196,9 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                     logger.info("Cleaned up temporary workspace")
                 except Exception as e:
                     logger.error(f"Error during cleanup: {e}")
-                    
+
             return options
-            
+
         # Process according to download option for large files
         if size_mb > max_size_mb and download_option:
             if download_option == "download_partial":
@@ -2178,16 +2206,16 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                 chunk_size_bytes = chunk_size_kb * 1024
                 head_cmd = f"head -c {chunk_size_bytes} {shlex.quote(path)} | base64"
                 head_result = workspace.process.exec(head_cmd)
-                
+
                 # Decode base64 content
                 try:
                     content_b64 = str(head_result.result).strip()
                     content = base64.b64decode(content_b64)
-                    
+
                     # Clean up if needed
                     if needs_cleanup:
                         daytona.remove(workspace)
-                        
+
                     return {
                         "success": True,
                         "filename": os.path.basename(path),
@@ -2202,7 +2230,7 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                 except Exception as e:
                     logger.error(f"Error decoding partial content: {e}")
                     raise
-                    
+
             elif download_option == "convert_to_text":
                 # Try to convert file to text (works best for PDFs, code files, etc.)
                 try:
@@ -2217,11 +2245,11 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                         text_cmd = f"cat {shlex.quote(path)} | head -c 100000"
                         text_result = workspace.process.exec(text_cmd)
                         content = str(text_result.result).encode('utf-8')
-                    
+
                     # Clean up if needed
                     if needs_cleanup:
                         daytona.remove(workspace)
-                        
+
                     return {
                         "success": True,
                         "filename": os.path.basename(path),
@@ -2235,19 +2263,19 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                 except Exception as e:
                     logger.error(f"Error converting to text: {e}")
                     raise
-                    
+
             elif download_option == "compress_file":
                 # Compress the file before downloading
                 try:
                     temp_path = f"/tmp/compressed_{uuid.uuid4().hex}.gz"
                     compress_cmd = f"gzip -c {shlex.quote(path)} > {temp_path}"
                     workspace.process.exec(compress_cmd)
-                    
+
                     # Get compressed file size
                     size_cmd = f"stat -f %z {temp_path}"
                     size_result = workspace.process.exec(size_cmd)
                     compressed_size = int(str(size_result.result).strip())
-                    
+
                     # Download the compressed file
                     if hasattr(filesystem, 'download_file'):
                         content = filesystem.download_file(temp_path)
@@ -2256,14 +2284,14 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                         cat_cmd = f"cat {temp_path} | base64"
                         cat_result = workspace.process.exec(cat_cmd)
                         content = base64.b64decode(str(cat_result.result).strip())
-                    
+
                     # Clean up temporary file
                     workspace.process.exec(f"rm {temp_path}")
-                    
+
                     # Clean up workspace if needed
                     if needs_cleanup:
                         daytona.remove(workspace)
-                        
+
                     return {
                         "success": True,
                         "filename": f"{os.path.basename(path)}.gz",
@@ -2278,7 +2306,7 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                 except Exception as e:
                     logger.error(f"Error compressing file: {e}")
                     raise
-                    
+
             elif download_option == "force_download":
                 # Force download despite size
                 logger.info(f"Forcing download of large file: {path}")
@@ -2289,7 +2317,7 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                     "error": f"Unknown download option: {download_option}",
                     "options": ["download_partial", "convert_to_text", "compress_file", "force_download"]
                 }
-        
+
         # Download the file normally
         try:
             # Download using filesystem API
@@ -2300,14 +2328,14 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
                 cat_cmd = f"cat {shlex.quote(path)} | base64"
                 cat_result = workspace.process.exec(cat_cmd)
                 content = base64.b64decode(str(cat_result.result).strip())
-            
+
             logger.info(f"Successfully downloaded file: {path}, size: {len(content)} bytes")
-            
+
             # Clean up if needed
             if needs_cleanup:
                 daytona.remove(workspace)
                 logger.info("Cleaned up temporary workspace")
-            
+
             # Return metadata along with content
             return {
                 "success": True,
@@ -2320,11 +2348,11 @@ def file_downloader(path: str, max_size_mb: float = 5.0, download_option: str = 
         except Exception as e:
             logger.error(f"Error downloading file: {e}")
             raise
-            
+
     except Exception as e:
         logger.error(f"File download failed: {e}", exc_info=True)
         return {
-            "success": False, 
+            "success": False,
             "error": str(e),
             "file_path": path
         }
